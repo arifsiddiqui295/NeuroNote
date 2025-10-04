@@ -1,0 +1,27 @@
+@import "tailwindcss";
+/* src/index.css */
+
+
+/* body {
+   background-color: gray;
+} */
+.ql-editor {
+  font-size: 18px; /* You can change this to 16px, 20px, etc. */
+}
+/* Custom dark scrollbar */
+.dark-scrollbar::-webkit-scrollbar {
+  width: 8px; /* Width of the entire scrollbar */
+}
+
+.dark-scrollbar::-webkit-scrollbar-track {
+  background: #1f2937; /* Color of the tracking area (bg-gray-800) */
+}
+
+.dark-scrollbar::-webkit-scrollbar-thumb {
+  background: #4b5563; /* Color of the scroll thumb (bg-gray-600) */
+  border-radius: 20px; /* roundness of the scroll thumb */
+}
+
+.dark-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #6b7280; /* Color of the scroll thumb on hover (bg-gray-500) */
+}
