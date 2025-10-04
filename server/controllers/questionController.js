@@ -251,29 +251,31 @@ If the original question was already correct, the "correctedQuestion" object sho
 
         let aiTextResponse;
         try {
-            const result = await proModel.generateContent(prompt);
+            const result = await proCorrectionModel.generateContent(prompt);
             aiTextResponse = (await result.response).text();
         } catch (proError) {
             console.warn("Pro model failed for autofix. Falling back to Flash model.", proError.message);
-            const result = await flashModel.generateContent(prompt);
+            const result = await flashCorrectionModel.generateContent(prompt);
             aiTextResponse = (await result.response).text();
         }
 
-         let aiResponse;
+        let aiResponse;
         try {
             const cleanedResponse = aiTextResponse.replace(/```json\n|```/g, '').trim();
             aiResponse = JSON.parse(cleanedResponse);
         } catch (error) {
             return res.status(500).json({ message: "Failed to parse AI's correction." });
         }
-        
+
         // If the AI determined the user was correct, update the question in the DB
         if (aiResponse.evaluation?.isUserCorrect && aiResponse.correctedQuestion) {
             await Question.findByIdAndUpdate(questionId, aiResponse.correctedQuestion);
         }
-        
-        // Return only the evaluation part to the frontend
-        res.status(200).json(aiResponse.evaluation);
+        if (aiResponse.evaluation) {
+            res.status(200).json(aiResponse.evaluation);
+        } else {
+            throw new Error("AI response was missing the 'evaluation' key.");
+        }
 
     } catch (error) {
         console.error("Fatal error during question autofix:", error);
