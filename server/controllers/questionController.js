@@ -1,7 +1,7 @@
 const Note = require('../models/Note');
 const Question = require('../models/Question');
 const jsonToMarkdown = require('../utils/jsonToMarkdown')
-const { proModel, flashModel } = require('../config/gemini');
+const { proModel, flashModel, proCorrectionModel, flashCorrectionModel } = require('../config/gemini');
 const mongoose = require('mongoose');
 // @desc    Create a question manually (for testing)
 // @route   POST /api/questions
