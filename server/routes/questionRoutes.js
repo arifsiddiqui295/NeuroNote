@@ -4,7 +4,8 @@ const {
     getQuizQuestions,
     generateQuestions,
     getQuestionStats,
-    autofixQuestion } = require('../controllers/questionController');
+    autofixQuestion, 
+    getSmartQuizQuestions} = require('../controllers/questionController');
 const { protect } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
@@ -14,5 +15,6 @@ router.get('/', protect, getQuizQuestions);
 router.post('/generate', protect, generateQuestions);
 router.get('/stats', protect, getQuestionStats);
 router.post('/:questionId/autofix', protect, autofixQuestion);
+router.get('/smart-quiz', protect, getSmartQuizQuestions);
 
 module.exports = router;

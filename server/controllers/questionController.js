@@ -1,6 +1,7 @@
 const Note = require('../models/Note');
 const Question = require('../models/Question');
 const jsonToMarkdown = require('../utils/jsonToMarkdown')
+const UserProgress = require('../models/UserProgress');
 const { proModel, flashModel, proCorrectionModel, flashCorrectionModel } = require('../config/gemini');
 const mongoose = require('mongoose');
 // @desc    Create a question manually (for testing)
@@ -282,7 +283,48 @@ If the original question was already correct, the "correctedQuestion" object sho
         res.status(500).json({ message: "AI question autofix failed." });
     }
 };
+const getSmartQuizQuestions = async (req, res) => {
+    try {
+        const { lessonIds, limit = 10 } = req.query;
+        const userId = req.user._id;
+        const lessonIdArray = lessonIds.split(',').map(id => new mongoose.Types.ObjectId(id.trim()));
 
+        let smartQuiz = [];
+
+        // Priority 1: Questions answered incorrectly, most incorrect first
+        const wrongProgress = await UserProgress.find({ user: userId, incorrectCount: { $gt: 0 } }).sort({ incorrectCount: -1 });
+        const wrongQuestionIds = wrongProgress.map(p => p.question);
+        const wrongQuestions = await Question.find({ _id: { $in: wrongQuestionIds }, lesson: { $in: lessonIdArray } });
+        smartQuiz.push(...wrongQuestions);
+
+        if (smartQuiz.length >= limit) {
+            return res.json(smartQuiz.slice(0, limit));
+        }
+
+        // Priority 2: Unattempted questions
+        const attemptedQuestionIds = (await UserProgress.find({ user: userId })).map(p => p.question);
+        const unattemptedQuestions = await Question.find({ _id: { $nin: attemptedQuestionIds }, lesson: { $in: lessonIdArray } });
+        smartQuiz.push(...unattemptedQuestions);
+
+        if (smartQuiz.length >= limit) {
+            return res.json(smartQuiz.slice(0, limit));
+        }
+
+        // Priority 3: Fallback to random questions if still not enough
+        const existingIds = smartQuiz.map(q => q._id);
+        const randomQuestions = await Question.aggregate([
+            { $match: { lesson: { $in: lessonIdArray }, _id: { $nin: existingIds } } },
+            { $sample: { size: limit - smartQuiz.length } }
+        ]);
+        smartQuiz.push(...randomQuestions);
+
+        res.json(smartQuiz.slice(0, limit));
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Error fetching smart quiz." });
+    }
+};
 
 module.exports = {
     createQuestion,
@@ -290,4 +332,5 @@ module.exports = {
     generateQuestions,
     getQuestionStats,
     autofixQuestion,
+    getSmartQuizQuestions
 };

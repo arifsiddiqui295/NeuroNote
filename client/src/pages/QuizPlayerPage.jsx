@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import questionService from '../api/questionApi';
 import Modal from '../components/Modal';
 import { toast } from 'react-toastify';
+import progressService from '../api/progressApi';
 export default function QuizPlayerPage() {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
@@ -25,37 +26,51 @@ export default function QuizPlayerPage() {
     const [reportResponse, setReportResponse] = useState(null);
     const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
 
-
     useEffect(() => {
         const loadQuestions = async () => {
+            setLoading(true);
+            // Reset all quiz state for a fresh start
             setIsAnswered(false);
             setSelectedAnswer(null);
+            setCurrentQuestionIndex(0);
+            setScore(0);
+            setQuizFinished(false);
 
-            if (location.state?.questions) {
-                setQuestions(location.state.questions);
-                setLoading(false);
-            } else {
-                const lessonIds = searchParams.get('lessonIds')?.split(',');
-                const limit = searchParams.get('limit');
-                const source = searchParams.get('source');
+            // Get parameters from the URL
+            const mode = searchParams.get('mode');
+            const limit = searchParams.get('limit');
+            const lessonIds = searchParams.get('lessonIds')?.split(',');
+            const source = searchParams.get('source');
 
-                if (lessonIds) {
-                    try {
-                        const data = await questionService.getQuizQuestions({ lessonIds, limit, source });
-                        setQuestions(data);
-                    } catch (err) {
-                        console.error(err);
-                    } finally {
-                        setLoading(false);
-                    }
-                } else {
-                    setLoading(false);
+            try {
+                let data;
+                // Scenario 1: Questions were passed directly after AI generation
+                if (location.state?.questions) {
+                    data = location.state.questions;
                 }
+                // Scenario 2: It's a review session
+                else if (mode === 'review') {
+                    data = await progressService.getReviewQuestions(limit);
+                }
+                // Scenario 3: It's a "Smart Quiz"
+                else if (mode === 'smart-quiz' && lessonIds) {
+                    data = await questionService.getSmartQuizQuestions({ lessonIds, limit });
+                }
+                // Scenario 4: It's a standard quiz from the setup page
+                else if (lessonIds) {
+                    data = await questionService.getQuizQuestions({ lessonIds, limit, source });
+                }
+
+                setQuestions(data || []);
+            } catch (err) {
+                console.error("Failed to load questions:", err);
+                setQuestions([]); // Ensure questions is an empty array on error
+            } finally {
+                setLoading(false);
             }
         };
         loadQuestions();
     }, [searchParams, location.state]);
-
     const handleNextQuestion = () => {
         setIsAnswered(false);
         setSelectedAnswer(null);
@@ -69,17 +84,26 @@ export default function QuizPlayerPage() {
         }
     };
 
-    const handleAnswerSubmit = (answer) => {
+    const handleAnswerSubmit = async (answer) => {
         if (isAnswered) return;
 
         setSelectedAnswer(answer);
         setIsAnswered(true);
 
-        const correctAnswer = questions[currentQuestionIndex].answer;
-        if (typeof answer === 'string' && typeof correctAnswer === 'string') {
-            if (answer.trim().toLowerCase() === correctAnswer.trim().toLowerCase()) {
-                setScore(score + 1);
-            }
+        const currentQuestion = questions[currentQuestionIndex];
+        const correctAnswer = currentQuestion.answer;
+        const wasCorrect = answer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
+
+        if (wasCorrect) {
+            setScore(score + 1);
+        }
+
+        // --- NEW: Update SRS progress ---
+        try {
+            await progressService.updateProgress(currentQuestion._id, wasCorrect);
+        } catch (error) {
+            console.error("Failed to update progress:", error);
+            // Optionally show a toast error if progress update fails
         }
     };
 

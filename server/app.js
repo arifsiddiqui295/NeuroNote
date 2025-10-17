@@ -25,8 +25,7 @@ app.use('/api/lessons', require('./routes/lessonRoutes'));
 app.use('/api/notes', require('./routes/noteRoutes'));
 app.use('/api/questions', require('./routes/questionRoutes'));
 app.use('/api/upload', require('./routes/uploadRoutes'));
-// app.use('/api/progress', require('./routes/progressRoutes'));
-
+app.use('/api/progress', require('./routes/progressRoutes'));
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

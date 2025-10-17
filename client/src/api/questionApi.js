@@ -52,11 +52,24 @@ const autofixQuestion = async (questionId, comment) => {
     const response = await axios.post(`${API_URL}/${questionId}/autofix`, body, config);
     return response.data;
 };
+
+const getSmartQuizQuestions = async ({ lessonIds, limit }) => {
+    const config = {
+        headers: getAuthHeader(),
+        params: {
+            lessonIds: lessonIds.join(','),
+            limit,
+        },
+    };
+    const response = await axios.get(`${API_URL}/smart-quiz`, config);
+    return response.data;
+};
 const questionService = {
     generateQuestions,
     getQuizQuestions,
     getQuestionStats,
-    autofixQuestion
+    autofixQuestion,
+    getSmartQuizQuestions,
 };
 
 export default questionService;

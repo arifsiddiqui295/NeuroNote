@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import lessonService from '../api/lessonApi';
 import questionService from '../api/questionApi';
 import { toast } from 'react-toastify';
-
+import Modal from '../components/Modal'
 export default function QuizSetupPage() {
     const [lessons, setLessons] = useState([]);
     const [selectedLessons, setSelectedLessons] = useState([]);
@@ -12,6 +12,8 @@ export default function QuizSetupPage() {
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState({});
     const navigate = useNavigate();
+    const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
+    const [modalContent, setModalContent] = useState({ title: '', text: '' });
     useEffect(() => {
         const fetchInitialData = async () => {
             try {
@@ -38,17 +40,35 @@ export default function QuizSetupPage() {
                 : [...prev, lessonId]
         );
     };
-
-    const startQuiz = () => {
+    const openInfoModal = (type) => {
+        console.log("openInfoModal called with type:", type);
+        if (type === 'random') {
+            setModalContent({
+                title: 'About Random Quiz',
+                text: 'This quiz selects a completely random set of questions from the lessons you have chosen. It is great for general practice and reviewing a wide range of topics.'
+            });
+        } else { // 'smart'
+            setModalContent({
+                title: 'About Smart Quiz',
+                text: "This intelligent quiz prioritizes questions you have answered incorrectly in the past or have never seen before. It's the most effective way to strengthen your weak spots and improve your knowledge."
+            });
+        }
+        setIsInfoModalOpen(true);
+    };
+    const startQuiz = (isSmartQuiz = false) => {
         if (selectedLessons.length === 0) {
-             toast.error('Please select at least one lesson.');
+            toast.error('Please select at least one lesson.');
             return;
         }
         if (numQuestions < 1) {
-             toast.error('Please enter a valid number of questions (at least 1).');
+            toast.error('Please enter a valid number of questions (at least 1).');
             return;
         }
-        navigate(`/quiz/play?lessonIds=${selectedLessons.join(',')}&limit=${numQuestions}&source=${source}`);
+        if (isSmartQuiz) {
+            navigate(`/quiz/play?mode=smart-quiz&lessonIds=${selectedLessons.join(',')}&limit=${numQuestions}`);
+        } else {
+            navigate(`/quiz/play?lessonIds=${selectedLessons.join(',')}&limit=${numQuestions}&source=${source}`);
+        }
     };
 
     if (loading) return (
@@ -131,14 +151,43 @@ export default function QuizSetupPage() {
                         />
                     </div>
 
-                    <button
-                        onClick={startQuiz}
-                        className="w-full px-6 py-3 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 transition-colors"
-                    >
-                        Start Quiz
-                    </button>
+                    <div className="pt-4 border-t border-gray-700 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Random Quiz Button */}
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => startQuiz(false)}
+                                className="w-full px-6 py-3 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 transition-colors"
+                            >
+                                Start Random Quiz
+                            </button>
+                            <button onClick={() => openInfoModal('random')} className="p-2 rounded-full bg-gray-700 hover:bg-gray-600 text-white">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
+                            </button>
+                        </div>
+                        {/* Smart Quiz Button */}
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => startQuiz(true)}
+                                className="w-full px-6 py-3 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 transition-colors"
+                            >
+                                Start Smart Quiz
+                            </button>
+                            <button onClick={() => openInfoModal('smart')} className="p-2 rounded-full bg-gray-700 hover:bg-gray-600 text-white">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" /></svg>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
+            <Modal isOpen={isInfoModalOpen} onClose={() => setIsInfoModalOpen(false)}>
+                <h3 className="text-2xl font-bold text-white mb-2">{modalContent.title}</h3>
+                <p className="text-gray-300">{modalContent.text}</p>
+                <div className="text-right mt-6">
+                    <button onClick={() => setIsInfoModalOpen(false)} className="px-6 py-2 bg-blue-600 text-white rounded-md">
+                        Got it
+                    </button>
+                </div>
+            </Modal>
         </div>
     );
 }
