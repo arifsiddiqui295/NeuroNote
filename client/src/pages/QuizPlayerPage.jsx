@@ -28,7 +28,7 @@ export default function QuizPlayerPage() {
 
     const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false); // State for confirmation modal
     const [questionToDelete, setQuestionToDelete] = useState(null);
-
+    const [isDeleting, setIsDeleting] = useState(false);
     useEffect(() => {
         const loadQuestions = async () => {
             setLoading(true);
@@ -158,6 +158,7 @@ export default function QuizPlayerPage() {
 
     const confirmDeleteQuestion = async () => {
         if (!questionToDelete) return;
+        setIsDeleting(true);
         try {
             await questionService.deleteQuestion(questionToDelete);
             toast.success('Question deleted successfully.');
@@ -183,6 +184,7 @@ export default function QuizPlayerPage() {
         } finally {
             setIsDeleteConfirmOpen(false);
             setQuestionToDelete(null);
+            setIsDeleting(false);
         }
     };
     // --- Styled States ---
@@ -355,21 +357,23 @@ export default function QuizPlayerPage() {
                     </button>
                 </div>
             </Modal>
-            <Modal isOpen={isDeleteConfirmOpen} onClose={() => setIsDeleteConfirmOpen(false)}>
+            <Modal isOpen={isDeleteConfirmOpen} onClose={() => !isDeleting && setIsDeleteConfirmOpen(false)}>
                 <h3 className="text-xl font-semibold mb-4 text-red-400">Confirm Deletion</h3>
                 <p className="text-gray-300 mb-6">Are you sure you want to permanently delete this question? This action cannot be undone.</p>
                 <div className="flex justify-end space-x-4">
                     <button
                         onClick={() => setIsDeleteConfirmOpen(false)}
-                        className="px-6 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-500"
+                        className="px-6 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-500 disabled:opacity-50"
+                        disabled={isDeleting} // Disable while deleting
                     >
                         Cancel
                     </button>
                     <button
                         onClick={confirmDeleteQuestion}
-                        className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                        className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                        disabled={isDeleting} // Disable while deleting
                     >
-                        Delete
+                        {isDeleting ? 'Deleting...' : 'Delete'} {/* Show loading text */}
                     </button>
                 </div>
             </Modal>
