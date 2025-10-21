@@ -64,12 +64,19 @@ const getSmartQuizQuestions = async ({ lessonIds, limit }) => {
     const response = await axios.get(`${API_URL}/smart-quiz`, config);
     return response.data;
 };
+
+const deleteQuestion = async (questionId) => {
+    const config = { headers: getAuthHeader() };
+    const response = await axios.delete(`${API_URL}/${questionId}`, config);
+    return response.data;
+};
 const questionService = {
     generateQuestions,
     getQuizQuestions,
     getQuestionStats,
     autofixQuestion,
     getSmartQuizQuestions,
+    deleteQuestion,
 };
 
 export default questionService;

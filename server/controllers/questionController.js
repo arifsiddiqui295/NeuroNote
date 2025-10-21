@@ -4,9 +4,7 @@ const jsonToMarkdown = require('../utils/jsonToMarkdown')
 const UserProgress = require('../models/UserProgress');
 const { proModel, flashModel, proCorrectionModel, flashCorrectionModel } = require('../config/gemini');
 const mongoose = require('mongoose');
-// @desc    Create a question manually (for testing)
-// @route   POST /api/questions
-// @access  Private
+
 const createQuestion = async (req, res) => {
     try {
         const { lessonId, type, questionText, options, answer, source } = req.body;
@@ -30,12 +28,6 @@ const createQuestion = async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 };
-
-// @desc    Get questions for a quiz
-// @route   GET /api/questions
-// @access  Private
-// controllers/questionController.js
-
 const getQuizQuestions = async (req, res) => {
     try {
         const { lessonIds, source, limit = 10 } = req.query;
@@ -325,12 +317,39 @@ const getSmartQuizQuestions = async (req, res) => {
         res.status(500).json({ message: "Error fetching smart quiz." });
     }
 };
+const deleteQuestion = async (req, res) => {
+    try {
+        const { questionId } = req.params;
+        const userId = req.user._id;
 
+        // Find the question to ensure it belongs to the user
+        const question = await Question.findById(questionId);
+        if (!question) {
+            return res.status(404).json({ message: 'Question not found.' });
+        }
+        if (question.createdBy.toString() !== userId.toString()) {
+            return res.status(401).json({ message: 'User not authorized to delete this question.' });
+        }
+
+        // Delete the question itself
+        await Question.findByIdAndDelete(questionId);
+
+        // Delete any associated progress records for this user (or all users if desired)
+        await UserProgress.deleteMany({ question: questionId, user: userId });
+
+        res.status(200).json({ message: 'Question deleted successfully.' });
+
+    } catch (error) {
+        console.error("Error deleting question:", error);
+        res.status(500).json({ message: "Failed to delete question." });
+    }
+};
 module.exports = {
     createQuestion,
     getQuizQuestions,
     generateQuestions,
     getQuestionStats,
     autofixQuestion,
-    getSmartQuizQuestions
+    getSmartQuizQuestions,
+    deleteQuestion
 };

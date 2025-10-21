@@ -26,6 +26,9 @@ export default function QuizPlayerPage() {
     const [reportResponse, setReportResponse] = useState(null);
     const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
 
+    const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false); // State for confirmation modal
+    const [questionToDelete, setQuestionToDelete] = useState(null);
+
     useEffect(() => {
         const loadQuestions = async () => {
             setLoading(true);
@@ -147,6 +150,41 @@ export default function QuizPlayerPage() {
             setIsReporting(false);
         }
     };
+
+    const handleDeleteQuestion = () => {
+        setQuestionToDelete(questions[currentQuestionIndex]._id);
+        setIsDeleteConfirmOpen(true);
+    };
+
+    const confirmDeleteQuestion = async () => {
+        if (!questionToDelete) return;
+        try {
+            await questionService.deleteQuestion(questionToDelete);
+            toast.success('Question deleted successfully.');
+
+            // Remove the question from the current quiz session
+            const remainingQuestions = questions.filter(q => q._id !== questionToDelete);
+            setQuestions(remainingQuestions);
+
+            // Handle UI update after deletion
+            if (remainingQuestions.length === 0) {
+                setQuizFinished(true); // End quiz if no questions left
+            } else if (currentQuestionIndex >= remainingQuestions.length) {
+                // If the deleted question was the last one, go back one index
+                setCurrentQuestionIndex(remainingQuestions.length - 1);
+                handleNextQuestion(); // Reset UI state for the new last question
+            } else {
+                // If deleted from middle, just reset the view for the question now at this index
+                handleNextQuestion();
+            }
+
+        } catch (error) {
+            toast.error('Failed to delete question.');
+        } finally {
+            setIsDeleteConfirmOpen(false);
+            setQuestionToDelete(null);
+        }
+    };
     // --- Styled States ---
     if (loading) return (
         <div className='flex flex-col h-screen justify-center items-center text-white bg-gray-900'> {/* Assuming bg-gray-900 for full screen */}
@@ -255,7 +293,17 @@ export default function QuizPlayerPage() {
                             >
                                 Report Issue
                             </button>
-
+                            <button
+                                onClick={handleDeleteQuestion} // We'll create this function
+                                className="text-xs text-red-400 hover:text-red-300 flex items-center"
+                                title="Delete this question permanently"
+                            >
+                                {/* Trash Can Icon */}
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                                Delete
+                            </button>
                             {/* UPDATED: This button now opens the analysis modal */}
                             {reportResponse && (
                                 <button
@@ -304,6 +352,24 @@ export default function QuizPlayerPage() {
                         className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-md"
                     >
                         Close
+                    </button>
+                </div>
+            </Modal>
+            <Modal isOpen={isDeleteConfirmOpen} onClose={() => setIsDeleteConfirmOpen(false)}>
+                <h3 className="text-xl font-semibold mb-4 text-red-400">Confirm Deletion</h3>
+                <p className="text-gray-300 mb-6">Are you sure you want to permanently delete this question? This action cannot be undone.</p>
+                <div className="flex justify-end space-x-4">
+                    <button
+                        onClick={() => setIsDeleteConfirmOpen(false)}
+                        className="px-6 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-500"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={confirmDeleteQuestion}
+                        className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                    >
+                        Delete
                     </button>
                 </div>
             </Modal>
