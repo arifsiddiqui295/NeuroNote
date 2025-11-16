@@ -1,4 +1,4 @@
-import axios from 'axios';
+import apiClient from './apiClient';
 const BASE_URL = import.meta.env.VITE_API_URL;
 
 // 2. Create the specific URL for your auth service
@@ -23,7 +23,7 @@ const uploadImage = async (imageFile) => {
         },
     };
 
-    const response = await axios.post(API_URL, formData, config);
+    const response = await apiClient.post(API_URL, formData, config);
     return response.data;
 };
 
@@ -31,7 +31,7 @@ const deleteImage = async (imageUrl) => {
     const config = {
         headers: getAuthHeader(),
     };
-    const response = await axios.delete(API_URL, { ...config, data: { imageUrl } });
+    const response = await apiClient.delete(API_URL, { ...config, data: { imageUrl } });
     return response.data;
 };
 

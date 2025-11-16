@@ -1,4 +1,4 @@
-import axios from 'axios';
+import apiClient from './apiClient';
 const BASE_URL = import.meta.env.VITE_API_URL;
 
 // 2. Create the specific URL for your auth service
@@ -21,7 +21,7 @@ const updateProgress = async (questionId, wasCorrect) => {
         questionId,
         wasCorrect,
     };
-    const response = await axios.post(API_URL, body, config);
+    const response = await apiClient.post(API_URL, body, config);
     return response.data;
 };
 const getReviewQuestions = async (limit) => {
@@ -29,7 +29,7 @@ const getReviewQuestions = async (limit) => {
         headers: getAuthHeader(),
         params: { limit },
     };
-    const response = await axios.get(`${API_URL}/review`, config);
+    const response = await apiClient.get(`${API_URL}/review`, config);
     return response.data;
 };
 const progressService = {

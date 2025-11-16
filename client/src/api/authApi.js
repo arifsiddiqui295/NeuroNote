@@ -1,4 +1,4 @@
-import axios from 'axios';
+import apiClient from './apiClient';
 
 const BASE_URL = import.meta.env.VITE_API_URL;
 
@@ -7,7 +7,7 @@ const API_URL = `${BASE_URL}/auth`;
 
 // src/api/authApi.j
 const login = async (email, password) => {
-  const response = await axios.post(`${API_URL}/login`, {
+  const response = await apiClient.post(`${API_URL}/login`, {
     email,
     password,
   });
@@ -15,7 +15,7 @@ const login = async (email, password) => {
   return response.data;
 };
 const register = async (username, email, password) => {
-  const response = await axios.post(`${API_URL}/register`, {
+  const response = await apiClient.post(`${API_URL}/register`, {
     username,
     email,
     password,

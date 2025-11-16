@@ -1,4 +1,4 @@
-import axios from 'axios';
+import apiClient from './apiClient';
 // 1. Get the base URL from the .env file
 const BASE_URL = import.meta.env.VITE_API_URL;
 
@@ -8,7 +8,7 @@ const createLesson = async (lessonData) => {
     const config = {
         headers: getAuthHeader(),
     };
-    const response = await axios.post(API_URL, lessonData, config);
+    const response = await apiClient.post(API_URL, lessonData, config);
     return response.data;
 };
 // Function to get the auth token from localStorage
@@ -25,7 +25,7 @@ const getLessons = async () => {
     const config = {
         headers: getAuthHeader(),
     };
-    const response = await axios.get(API_URL, config);
+    const response = await apiClient.get(API_URL, config);
     return response.data;
 };
 

@@ -20,7 +20,8 @@ export default function DashboardPage() {
         const data = await lessonService.getLessons();
         setLessons(data);
       } catch (err) {
-        setError('Failed to fetch lessons.');
+        console.log(err);
+        setError('Failed to fetch lessons, Please Login again.');
       } finally {
         setLoading(false);
       }

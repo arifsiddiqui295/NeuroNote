@@ -1,4 +1,4 @@
-import axios from 'axios';
+import apiClient from './apiClient';
 const BASE_URL = import.meta.env.VITE_API_URL;
 
 // 2. Create the specific URL for your auth service
@@ -23,7 +23,7 @@ const generateQuestions = async ({ noteIds, source, count }) => {
         source,
         count,
     };
-    const response = await axios.post(`${API_URL}/generate`, body, config);
+    const response = await apiClient.post(`${API_URL}/generate`, body, config);
     return response.data;
 };
 const getQuizQuestions = async ({ lessonIds, source, limit }) => {
@@ -36,20 +36,20 @@ const getQuizQuestions = async ({ lessonIds, source, limit }) => {
         },
     };
     // console.log("config = ", config)
-    const response = await axios.get(API_URL, config);
+    const response = await apiClient.get(API_URL, config);
     return response.data;
 };
 
 const getQuestionStats = async () => {
     const config = { headers: getAuthHeader() };
-    const response = await axios.get(`${API_URL}/stats`, config);
+    const response = await apiClient.get(`${API_URL}/stats`, config);
     return response.data;
 };
 
 const autofixQuestion = async (questionId, comment) => {
     const config = { headers: getAuthHeader() };
     const body = { comment };
-    const response = await axios.post(`${API_URL}/${questionId}/autofix`, body, config);
+    const response = await apiClient.post(`${API_URL}/${questionId}/autofix`, body, config);
     return response.data;
 };
 
@@ -61,13 +61,13 @@ const getSmartQuizQuestions = async ({ lessonIds, limit }) => {
             limit,
         },
     };
-    const response = await axios.get(`${API_URL}/smart-quiz`, config);
+    const response = await apiClient.get(`${API_URL}/smart-quiz`, config);
     return response.data;
 };
 
 const deleteQuestion = async (questionId) => {
     const config = { headers: getAuthHeader() };
-    const response = await axios.delete(`${API_URL}/${questionId}`, config);
+    const response = await apiClient.delete(`${API_URL}/${questionId}`, config);
     return response.data;
 };
 const questionService = {
