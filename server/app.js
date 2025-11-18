@@ -21,6 +21,7 @@ app.get("/api", (req, res) => {
 });
 
 app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/workspaces', require('./routes/workspaceRoutes'));
 app.use('/api/lessons', require('./routes/lessonRoutes'));
 app.use('/api/notes', require('./routes/noteRoutes'));
 app.use('/api/questions', require('./routes/questionRoutes'));

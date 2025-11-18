@@ -24,6 +24,7 @@ export default function LessonPage() {
   const [noteContent, setNoteContent] = useState('');
   const [noteId, setNoteId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [workspaceId, setWorkspaceId] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -32,11 +33,15 @@ export default function LessonPage() {
 
   useEffect(() => {
     const fetchNote = async () => {
+      if (!lessonId) return;
+      setLoading(true);
       try {
+        // The note object from the API includes its workspace ID
         const note = await noteService.getNotesByLesson(lessonId);
         if (note) {
           setNoteContent(jsonToHtml(note.content));
           setNoteId(note._id);
+          setWorkspaceId(note.workspace); // NEW: Save the workspace ID
         }
       } catch (err) {
         setError('Failed to fetch note.');
@@ -130,39 +135,43 @@ export default function LessonPage() {
       if (noteId) {
         await noteService.updateNote(noteId, { content: contentJson });
       } else {
-        const newNote = await noteService.createNote({ lessonId, content: contentJson });
+        const newNote = await noteService.createNote({ lessonId, content: contentJson, workspaceId });
         setNoteId(newNote._id);
+        setWorkspaceId(newNote.workspace);
       }
-       toast.success('Note saved successfully!');
+      toast.success('Note saved successfully!');
     } catch (err) {
-      setError('Failed to save note.');
+      toast.error(err.response?.data?.message || 'Failed to save note.');
+      // setError(err.response?.data?.message || 'Failed to save note.');
+      console.log(err)
     } finally {
       setLoading(false);
     }
   };
 
   const handleGenerateQuestions = async () => {
-    if (!noteId) {
-       toast.error('Please save the note first.');
+    if (!noteId || !workspaceId) {
+      toast.error('Note is not fully loaded or saved. Please wait or save the note first.');
       return;
     }
     setGenerating(true);
     setError('');
     try {
-      const newQuestions = await questionService.generateQuestions({
+      // NEW: Pass the workspaceId to the API call
+      const newQuestions = await questionService.generateQuestions(workspaceId, {
         noteIds: [noteId],
         source: source,
         count: numQuestions,
       });
       setIsModalOpen(false);
-      navigate('/quiz/play', { state: { questions: newQuestions } });
+      navigate(`/quiz/play?workspaceId=${workspaceId}`, { state: { questions: newQuestions } });
     } catch (err) {
       setError('Failed to generate questions.');
+      toast.error('Failed to generate questions.');
     } finally {
       setGenerating(false);
     }
   };
-
 
   if (loading && !noteContent && !error)
     return (
@@ -182,21 +191,38 @@ export default function LessonPage() {
   return (
     <div className="min-h-screen bg-gray-900 text-white p-4 sm:p-6 md:p-8">
       <div className="max-w-8xl mx-auto">
-        <div className="flex justify-between items-center mb-4">
-          <h1 className="text-3xl font-bold">Lesson Notes</h1>
-          <div className="flex items-center space-x-4">
+        <div className="flex flex-col gap-4 mb-4 sm:flex-row sm:justify-between sm:items-center">
+
+          {/* 1. Title: Always on top left, full width on mobile */}
+          <h1 className="text-4xl text-white font-extrabold sm:text-3xl sm:font-bold">
+            Lesson Notes
+          </h1>
+
+          {/* 2. Buttons: Stacked vertically on mobile, side-by-side on desktop */}
+          <div className="flex flex-col gap-3 w-full sm:w-auto sm:flex-row sm:space-x-4 sm:gap-0">
+
+            {/* Primary Action: Generate AI Questions (Outline Style, full width on mobile) */}
+            <button
+              onClick={() => setIsModalOpen(true)}
+              // Style: Outline button, full width on mobile, reduced padding and text size for a smaller look
+              className="px-4 py-2 text-green-400 bg-transparent border-2 border-green-600 rounded-xl
+               hover:bg-green-600 hover:text-white font-bold text-base // <-- Text size reduced to base
+               transition duration-200 w-full text-center sm:w-auto sm:text-base sm:py-2" // <-- py reduced to 2
+            >
+              Generate AI Questions and Start Quiz
+            </button>
+            {/* Secondary Action: Save Note (Subtle, solid blue, full width on mobile) */}
             <button
               onClick={handleSave}
-              className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 disabled:bg-gray-500"
+              // Style: Solid blue (clear action), full width, slightly less aggressive than green outline
+              className="px-4 py-3 bg-blue-600 text-white font-bold rounded-xl 
+                       hover:bg-blue-700 disabled:bg-gray-500 
+                       transition duration-200 w-full text-center sm:w-auto sm:text-base sm:py-2"
               disabled={loading || generating}
             >
               {loading ? 'Saving...' : 'Save Note'}
             </button>
-            <button
-              onClick={() => setIsModalOpen(true)} // This button now opens the modal
-              className="px-6 py-2 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700"
-            >  Generate AI Questions and Start Quiz
-            </button>
+
           </div>
         </div>
         {error && <p className="text-red-500 text-sm mb-4">{error}</p>}

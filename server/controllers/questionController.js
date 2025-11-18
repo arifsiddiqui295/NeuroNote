@@ -1,48 +1,66 @@
 const Note = require('../models/Note');
 const Question = require('../models/Question');
-const jsonToMarkdown = require('../utils/jsonToMarkdown')
 const UserProgress = require('../models/UserProgress');
+const Workspace = require('../models/Workspace');
+const Lesson = require('../models/Lesson');
+const jsonToMarkdown = require('../utils/jsonToMarkdown');
 const { proModel, flashModel, proCorrectionModel, flashCorrectionModel } = require('../config/gemini');
 const mongoose = require('mongoose');
 
+// Helper function to check permissions manually
+const checkMembershipById = async (workspaceId, userId) => {
+    const workspace = await Workspace.findById(workspaceId);
+    if (!workspace) return null;
+    const member = workspace.members.find(
+        (m) => m.user.toString() === userId.toString()
+    );
+    return member; // Returns the member object (with role) or undefined
+};
+
+
+// @desc    Create a question manually
+// @route   POST /api/questions/:workspaceId
 const createQuestion = async (req, res) => {
     try {
+        if (req.memberRole === 'viewer') {
+            return res.status(403).json({ message: 'Viewers cannot create questions.' });
+        }
+
         const { lessonId, type, questionText, options, answer, source } = req.body;
 
-        if (!lessonId || !type || !questionText || !answer || !source) {
-            return res.status(400).json({ message: 'Missing required fields' });
+        const lesson = await Lesson.findById(lessonId);
+        if (!lesson || lesson.workspace.toString() !== req.params.workspaceId) {
+            return res.status(400).json({ message: 'Lesson not found in this workspace.' });
         }
 
         const question = await Question.create({
+            ...req.body,
             lesson: lessonId,
-            type,
-            questionText,
-            options,
-            answer,
-            source,
-            createdBy: req.user._id,
+            workspace: req.params.workspaceId,
         });
 
         res.status(201).json(question);
     } catch (error) {
+        if (error.code === 11000) {
+            return res.status(400).json({ message: 'This question text already exists in this workspace.' });
+        }
         res.status(500).json({ message: error.message });
     }
 };
+
+// @desc    Get random quiz questions
+// @route   GET /api/questions/:workspaceId
 const getQuizQuestions = async (req, res) => {
     try {
+        const { workspaceId } = req.params;
         const { lessonIds, source, limit = 10 } = req.query;
 
-        const filter = { createdBy: req.user._id };
+        const filter = { workspace: new mongoose.Types.ObjectId(workspaceId) };
 
         if (lessonIds) {
-            const lessonIdArray = lessonIds.split(',');
-
-            // NEW FIX: Convert each string ID into a MongoDB ObjectId
-            const lessonObjectIds = lessonIdArray.map(id => new mongoose.Types.ObjectId(id.trim()));
-
+            const lessonObjectIds = lessonIds.split(',').map(id => new mongoose.Types.ObjectId(id.trim()));
             filter.lesson = { $in: lessonObjectIds };
         }
-
         if (source) {
             filter.source = source;
         }
@@ -54,128 +72,130 @@ const getQuizQuestions = async (req, res) => {
 
         res.json(questions);
     } catch (error) {
-        console.error("Error fetching quiz questions:", error);
         res.status(500).json({ message: error.message });
     }
 };
+
+// @desc    Generate AI questions
+// @route   POST /api/questions/:workspaceId/generate
 const generateQuestions = async (req, res) => {
     try {
-        // Step 1: Get data from request
+        if (req.memberRole === 'viewer') {
+            return res.status(403).json({ message: 'Viewers cannot generate questions.' });
+        }
+
+        const { workspaceId } = req.params;
         const { noteIds, source = 'from_notes', count = 5 } = req.body;
 
         if (!noteIds || noteIds.length === 0) {
             return res.status(400).json({ message: 'Note IDs are required' });
         }
 
-        // Step 2: Fetch notes and convert their content to Markdown
         const notes = await Note.find({
             '_id': { $in: noteIds },
-            'createdBy': req.user._id
-        });
+            'workspace': workspaceId
+        }).populate({ path: 'lesson', populate: { path: 'workspace', select: 'context' } });
 
         if (notes.length === 0) {
-            return res.status(404).json({ message: 'No valid notes found or not authorized' });
+            return res.status(404).json({ message: 'No valid notes found in this workspace.' });
         }
 
-        const combinedMarkdown = notes
-            .map(note => jsonToMarkdown(note.content))
-            .join('\n\n---\n\n'); // Separate notes with a divider
-
-        if (!combinedMarkdown) {
-            return res.status(400).json({ message: 'Note content is empty' });
+        // --- THIS IS THE FIX ---
+        // Check for orphaned notes (lesson has been deleted)
+        if (!notes[0].lesson || !notes[0].lesson.workspace) {
+            console.error(`Data integrity error: Note ${notes[0]._id} is orphaned or its lesson is missing a workspace.`);
+            return res.status(404).json({ message: 'Data integrity error: Could not find a valid lesson for the selected note.' });
         }
+        // --- END OF FIX ---
 
-        // Step 3: Build the dynamic prompt based on the 'source'
+        const combinedMarkdown = notes.map(note => jsonToMarkdown(note.content)).join('\n\n---\n\n');
+
+        const aiContext = notes[0].lesson.workspace.context || "General Knowledge";
+
         let prompt;
         if (source === 'from_notes') {
-            prompt = `You are a helpful German language teacher creating a quiz. Based ONLY on the following notes, generate ${count} diverse quiz questions.
-
-Rules:
-1. The questions must be directly answerable from the provided notes.
-2. You MUST respond with a valid JSON array of objects. Do not include any text outside of the JSON array.
-
-Each object must have the structure: {"type": "mcq" or "fill-in-the-blank", "questionText": "...", "options": [...], "answer": "...","explanation": "A brief, easy-to-understand, and beginner-friendly one-sentence explanation of why the answer is correct."}
-
-Here are the notes:
-\`\`\`markdown
-${combinedMarkdown}
-\`\`\``;
+            prompt = `You are a helpful expert and tutor for ${aiContext}. Based ONLY on the following notes about ${aiContext}, generate ${count} quiz questions.
+            Rules:
+            1. The questions must be directly answerable from the provided notes.
+            2. You MUST respond with a valid JSON array of objects. Do not include any text outside of the JSON array.
+            3. Each object must have the structure: {"type": "...", "questionText": "...", "options": [...], "answer": "...", "explanation": "A brief, easy-to-understand, and beginner-friendly one-sentence explanation of why the answer is correct.."}
+            4. IMPORTANT: The "type" field MUST be either "mcq" or "fill-in-the-blank".
+            
+            Here are the notes:
+            \`\`\`markdown
+            ${combinedMarkdown}
+            \`\`\``;
         } else { // source === 'topic_related'
-            prompt = `You are a helpful German language teacher creating a quiz. The following notes cover certain topics. Your task is to generate ${count} new, topic-related questions that test a broader understanding of these topics, but ARE NOT directly answered in the notes.
-
-Rules:
-1. DO NOT create questions that can be answered by simply copying text from the notes.
-2. You MUST respond with a valid JSON array of objects. Do not include any text outside of the JSON array.
-
-Each object must have the structure: {"type": "mcq" or "fill-in-the-blank", "questionText": "...", "options": [...], "answer": "...","explanation": "A brief, easy-to-understand, and beginner-friendly one-sentence explanation of why the answer is correct.."}
-
-Here are the notes for context on the topics:
-\`\`\`markdown
-${combinedMarkdown}
-\`\`\``;
+            prompt = `You are a helpful expert and tutor for ${aiContext}. The following notes cover ${aiContext}. Your task is to generate ${count} new, topic-related questions that test a broader understanding, but ARE NOT directly answered in the notes.
+            Rules:
+            1. DO NOT create questions that can be answered by simply copying text.
+            2. You MUST respond with a valid JSON array of objects. Do not include any text outside of the JSON array.
+            3. Each object must have the structure: {"type": "...", "questionText": "...", "options": [...], "answer": "...", "explanation": "A brief, easy-to-understand, and beginner-friendly one-sentence explanation of why the answer is correct.."}
+            4. IMPORTANT: The "type" field MUST be either "mcq" or "fill-in-the-blank".
+            
+            Here are the notes for context:
+            \`\`\`markdown
+            ${combinedMarkdown}
+            \`\`\``;
         }
 
-        // Step 4: Call the AI, with a fallback from Pro to Flash model
         let aiTextResponse;
         try {
             const result = await proModel.generateContent(prompt);
-            const response = await result.response;
-            aiTextResponse = response.text();
+            aiTextResponse = (await result.response).text();
         } catch (proError) {
             console.warn("Pro model failed. Falling back to Flash model.", proError.message);
             const result = await flashModel.generateContent(prompt);
-            const response = await result.response;
-            aiTextResponse = response.text();
+            aiTextResponse = (await result.response).text();
         }
 
-        // Step 5: Clean and parse the AI's JSON response
         let generatedQuestions;
         try {
             const cleanedResponse = aiTextResponse.replace(/```json\n|```/g, '').trim();
             generatedQuestions = JSON.parse(cleanedResponse);
         } catch (error) {
-            console.error("AI returned invalid JSON:", aiTextResponse);
-            return res.status(500).json({ message: "Failed to parse AI response. Please try again." });
+            return res.status(500).json({ message: "Failed to parse AI response." });
         }
 
-        // Step 6: Prepare questions for saving to the database
+        console.log("Generated Questions from AI:", generatedQuestions);
+
         const questionsToSave = generatedQuestions.map(q => ({
             ...q,
-            lesson: notes[0].lesson,
+            lesson: notes[0].lesson._id,
+            workspace: workspaceId,
             source: source,
-            createdBy: req.user._id,
         }));
 
-        // Step 7: Save the new questions to the database
         const newQuestions = await Question.insertMany(questionsToSave, { ordered: false });
-
+        console.log("Generated Questions Saved:", newQuestions);
         res.status(201).json(newQuestions);
 
     } catch (error) {
-        console.error("Fatal error during question generation:", error);
-        res.status(500).json({ message: "AI question generation failed after multiple attempts." });
+        console.error("FAILED TO SAVE QUESTIONS:", error);
+        res.status(500).json({ message: "AI question generation failed.", error: error.message });
     }
 };
+
+// @desc    Get question stats for a workspace
+// @route   GET /api/questions/:workspaceId/stats
 const getQuestionStats = async (req, res) => {
     try {
+        const { workspaceId } = req.params;
+
         const stats = await Question.aggregate([
-            // Match questions created by the logged-in user
-            { $match: { createdBy: req.user._id } },
-            // Group by lesson and source to get counts
+            { $match: { workspace: new mongoose.Types.ObjectId(workspaceId) } },
             {
                 $group: {
                     _id: { lesson: "$lesson", source: "$source" },
                     count: { $sum: 1 }
                 }
             },
-            // Group again by just the lesson to format the data
             {
                 $group: {
                     _id: "$_id.lesson",
                     counts: { $push: { source: "$_id.source", count: "$count" } }
                 }
             },
-            // Format the final output
             {
                 $project: {
                     _id: 0,
@@ -185,7 +205,6 @@ const getQuestionStats = async (req, res) => {
             }
         ]);
 
-        // Convert array to an object keyed by lessonId for easy frontend lookup
         const statsMap = stats.reduce((acc, item) => {
             acc[item.lessonId] = item.stats;
             return acc;
@@ -196,58 +215,57 @@ const getQuestionStats = async (req, res) => {
         res.status(500).json({ message: "Error fetching stats" });
     }
 };
+
+// @desc    Autofix a question
+// @route   POST /api/questions/autofix/:questionId
 const autofixQuestion = async (req, res) => {
     try {
         const { questionId } = req.params;
         const { comment } = req.body;
+        console.log(`Autofix requested for question ${questionId} with comment: ${comment}`);
+        const originalQuestion = await Question.findById(questionId).populate({
+            path: 'lesson',
+            populate: { path: 'workspace' }
+        });
 
-        if (!comment) {
-            return res.status(400).json({ message: 'A comment explaining the error is required.' });
-        }
-
-        const originalQuestion = await Question.findById(questionId);
         if (!originalQuestion) {
-            return res.status(404).json({ message: 'Original question not found.' });
+            return res.status(404).json({ message: 'Question not found.' });
         }
 
-        const prompt = `You are a quality control expert for a German language quiz app. A user has reported an error in the following quiz question.
+        // --- FIX for orphaned data ---
+        if (!originalQuestion.lesson || !originalQuestion.lesson.workspace) {
+            console.error(`Data integrity error: Question ${originalQuestion._id} is orphaned.`);
+            return res.status(404).json({ message: 'Data integrity error: Question is orphaned.' });
+        }
+        // --- END OF FIX ---
 
-Your tasks are:
-1.  **Evaluate:** Determine if the user's feedback is correct.
-2.  **Correct (if needed):** If the user is correct, provide a fixed version of the question.
+        const workspaceId = originalQuestion.lesson.workspace._id;
+        const member = await checkMembershipById(workspaceId, req.user._id);
 
-User Feedback: "${comment}"
+        if (!member) {
+            return res.status(403).json({ message: 'You are not a member of this workspace.' });
+        }
+        if (member.role === 'viewer') {
+            return res.status(403).json({ message: 'Viewers cannot fix questions.' });
+        }
 
-Original Question JSON:
-${JSON.stringify({
+        const aiContext = originalQuestion.lesson.workspace.context || "General Knowledge";
+
+        const prompt = `You are a quality control expert for a quiz app on ${aiContext}. A user reported an error.
+        User Feedback: "${comment}"
+        Original Question: ${JSON.stringify({
             questionText: originalQuestion.questionText,
             options: originalQuestion.options,
             answer: originalQuestion.answer,
             explanation: originalQuestion.explanation,
         })}
-
-You MUST respond with a single, valid JSON object with the following structure:
-{
-  "evaluation": {
-    "isUserCorrect": boolean,
-    "reasoning": "A brief explanation of your decision. If the user is wrong, explain the German grammar rule they misunderstood."
-  },
-  "correctedQuestion": {
-    "questionText": "...",
-    "options": ["..."],
-    "answer": "...",
-    "explanation": "..."
-  }
-}
-
-If the original question was already correct, the "correctedQuestion" object should be identical to the original. Respond with only the JSON object.`;
+        Respond with a JSON object of the corrected question: {"evaluation": {"isUserCorrect": boolean, "reasoning": "..."}, "correctedQuestion": {...}}`;
 
         let aiTextResponse;
         try {
             const result = await proCorrectionModel.generateContent(prompt);
             aiTextResponse = (await result.response).text();
         } catch (proError) {
-            console.warn("Pro model failed for autofix. Falling back to Flash model.", proError.message);
             const result = await flashCorrectionModel.generateContent(prompt);
             aiTextResponse = (await result.response).text();
         }
@@ -257,55 +275,60 @@ If the original question was already correct, the "correctedQuestion" object sho
             const cleanedResponse = aiTextResponse.replace(/```json\n|```/g, '').trim();
             aiResponse = JSON.parse(cleanedResponse);
         } catch (error) {
-            return res.status(500).json({ message: "Failed to parse AI's correction." });
+            return res.status(500).json({ message: "Failed to parse AI's correction.", error: error.message });
         }
 
-        // If the AI determined the user was correct, update the question in the DB
         if (aiResponse.evaluation?.isUserCorrect && aiResponse.correctedQuestion) {
             await Question.findByIdAndUpdate(questionId, aiResponse.correctedQuestion);
         }
+
         if (aiResponse.evaluation) {
             res.status(200).json(aiResponse.evaluation);
         } else {
-            throw new Error("AI response was missing the 'evaluation' key.");
+            throw new Error("AI response was missing 'evaluation' key.");
         }
 
     } catch (error) {
-        console.error("Fatal error during question autofix:", error);
+        console.error("Autofix failed:", error);
         res.status(500).json({ message: "AI question autofix failed." });
     }
 };
+
+// @desc    Get smart quiz questions
+// @route   GET /api/questions/:workspaceId/smart-quiz
 const getSmartQuizQuestions = async (req, res) => {
     try {
+        const { workspaceId } = req.params;
         const { lessonIds, limit = 10 } = req.query;
         const userId = req.user._id;
-        const lessonIdArray = lessonIds.split(',').map(id => new mongoose.Types.ObjectId(id.trim()));
+
+        const filter = { workspace: new mongoose.Types.ObjectId(workspaceId) };
+        if (lessonIds) {
+            filter.lesson = { $in: lessonIds.split(',').map(id => new mongoose.Types.ObjectId(id.trim())) };
+        }
 
         let smartQuiz = [];
+        const userProgressFilter = { user: userId, workspace: workspaceId };
 
-        // Priority 1: Questions answered incorrectly, most incorrect first
-        const wrongProgress = await UserProgress.find({ user: userId, incorrectCount: { $gt: 0 } }).sort({ incorrectCount: -1 });
+        // Priority 1: Incorrect
+        const wrongProgress = await UserProgress.find({ ...userProgressFilter, incorrectCount: { $gt: 0 } }).sort({ incorrectCount: -1 });
         const wrongQuestionIds = wrongProgress.map(p => p.question);
-        const wrongQuestions = await Question.find({ _id: { $in: wrongQuestionIds }, lesson: { $in: lessonIdArray } });
+        const wrongQuestions = await Question.find({ ...filter, _id: { $in: wrongQuestionIds } });
         smartQuiz.push(...wrongQuestions);
 
-        if (smartQuiz.length >= limit) {
-            return res.json(smartQuiz.slice(0, limit));
-        }
+        if (smartQuiz.length >= limit) return res.json(smartQuiz.slice(0, limit));
 
-        // Priority 2: Unattempted questions
-        const attemptedQuestionIds = (await UserProgress.find({ user: userId })).map(p => p.question);
-        const unattemptedQuestions = await Question.find({ _id: { $nin: attemptedQuestionIds }, lesson: { $in: lessonIdArray } });
+        // Priority 2: Unattempted
+        const attemptedQuestionIds = (await UserProgress.find(userProgressFilter)).map(p => p.question);
+        const unattemptedQuestions = await Question.find({ ...filter, _id: { $nin: attemptedQuestionIds } });
         smartQuiz.push(...unattemptedQuestions);
 
-        if (smartQuiz.length >= limit) {
-            return res.json(smartQuiz.slice(0, limit));
-        }
+        if (smartQuiz.length >= limit) return res.json(smartQuiz.slice(0, limit));
 
-        // Priority 3: Fallback to random questions if still not enough
+        // Priority 3: Random
         const existingIds = smartQuiz.map(q => q._id);
         const randomQuestions = await Question.aggregate([
-            { $match: { lesson: { $in: lessonIdArray }, _id: { $nin: existingIds } } },
+            { $match: { ...filter, _id: { $nin: existingIds } } },
             { $sample: { size: limit - smartQuiz.length } }
         ]);
         smartQuiz.push(...randomQuestions);
@@ -313,37 +336,40 @@ const getSmartQuizQuestions = async (req, res) => {
         res.json(smartQuiz.slice(0, limit));
 
     } catch (error) {
-        console.error(error);
         res.status(500).json({ message: "Error fetching smart quiz." });
     }
 };
+
+// @desc    Delete a question
+// @route   DELETE /api/questions/:questionId
 const deleteQuestion = async (req, res) => {
     try {
         const { questionId } = req.params;
-        const userId = req.user._id;
 
-        // Find the question to ensure it belongs to the user
         const question = await Question.findById(questionId);
         if (!question) {
             return res.status(404).json({ message: 'Question not found.' });
         }
-        if (question.createdBy.toString() !== userId.toString()) {
-            return res.status(401).json({ message: 'User not authorized to delete this question.' });
+
+        const member = await checkMembershipById(question.workspace, req.user._id);
+
+        if (!member) {
+            return res.status(403).json({ message: 'You are not a member of this workspace.' });
+        }
+        if (member.role === 'viewer') {
+            return res.status(403).json({ message: 'Viewers cannot delete questions.' });
         }
 
-        // Delete the question itself
         await Question.findByIdAndDelete(questionId);
-
-        // Delete any associated progress records for this user (or all users if desired)
-        await UserProgress.deleteMany({ question: questionId, user: userId });
+        await UserProgress.deleteMany({ question: questionId, workspace: question.workspace });
 
         res.status(200).json({ message: 'Question deleted successfully.' });
 
     } catch (error) {
-        console.error("Error deleting question:", error);
         res.status(500).json({ message: "Failed to delete question." });
     }
 };
+
 module.exports = {
     createQuestion,
     getQuizQuestions,

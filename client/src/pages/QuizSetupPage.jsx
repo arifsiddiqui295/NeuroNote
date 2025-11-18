@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom'; // Import useParams
 import lessonService from '../api/lessonApi';
 import questionService from '../api/questionApi';
 import { toast } from 'react-toastify';
-import Modal from '../components/Modal'
+import Modal from '../components/Modal';
+
 export default function QuizSetupPage() {
     const [lessons, setLessons] = useState([]);
     const [selectedLessons, setSelectedLessons] = useState([]);
@@ -14,24 +15,32 @@ export default function QuizSetupPage() {
     const navigate = useNavigate();
     const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
     const [modalContent, setModalContent] = useState({ title: '', text: '' });
+
+    const { workspaceId } = useParams();
+
     useEffect(() => {
         const fetchInitialData = async () => {
+            if (!workspaceId) return; // Don't fetch if there's no workspaceId
+            setLoading(true);
             try {
-                // Fetch lessons and stats in parallel
+                // Fetch lessons and stats for this specific workspace
                 const [lessonsData, statsData] = await Promise.all([
-                    lessonService.getLessons(),
-                    questionService.getQuestionStats()
+                    lessonService.getLessons(workspaceId),
+                    questionService.getQuestionStats(workspaceId)
                 ]);
                 setLessons(lessonsData);
                 setStats(statsData);
+                console.log('Fetched lessons:', lessonsData);
+                console.log('Fetched stats:', statsData);
             } catch (err) {
                 console.error(err);
+                toast.error("Failed to load lesson data.");
             } finally {
                 setLoading(false);
             }
         };
         fetchInitialData();
-    }, []);
+    }, [workspaceId]); // Re-run if workspaceId changes
 
     const handleLessonToggle = (lessonId) => {
         setSelectedLessons((prev) =>
@@ -40,8 +49,8 @@ export default function QuizSetupPage() {
                 : [...prev, lessonId]
         );
     };
+
     const openInfoModal = (type) => {
-        console.log("openInfoModal called with type:", type);
         if (type === 'random') {
             setModalContent({
                 title: 'About Random Quiz',
@@ -55,6 +64,7 @@ export default function QuizSetupPage() {
         }
         setIsInfoModalOpen(true);
     };
+
     const startQuiz = (isSmartQuiz = false) => {
         if (selectedLessons.length === 0) {
             toast.error('Please select at least one lesson.');
@@ -64,11 +74,21 @@ export default function QuizSetupPage() {
             toast.error('Please enter a valid number of questions (at least 1).');
             return;
         }
+
+        // NEW: Pass the workspaceId to the quiz player
+        const params = new URLSearchParams({
+            workspaceId: workspaceId,
+            lessonIds: selectedLessons.join(','),
+            limit: numQuestions,
+        });
+
         if (isSmartQuiz) {
-            navigate(`/quiz/play?mode=smart-quiz&lessonIds=${selectedLessons.join(',')}&limit=${numQuestions}`);
+            params.set('mode', 'smart-quiz');
         } else {
-            navigate(`/quiz/play?lessonIds=${selectedLessons.join(',')}&limit=${numQuestions}&source=${source}`);
+            params.set('source', source);
         }
+
+        navigate(`/quiz/play?${params.toString()}`);
     };
 
     if (loading) return (
@@ -84,7 +104,6 @@ export default function QuizSetupPage() {
             <p className="text-xl">Loading Quiz...</p>
         </div>
     );
-
     return (
         <div className="min-h-screen bg-gray-900 text-gray-200 flex justify-center p-4">
             <div className="container mx-auto max-w-2xl">
@@ -108,7 +127,6 @@ export default function QuizSetupPage() {
                                         <label htmlFor={lesson._id} className="text-white font-medium">
                                             {`Lesson ${lesson.number}: ${lesson.title}`}
                                         </label>
-                                        {/* --- NEW: Display the stats --- */}
                                         <div className="text-sm text-gray-400">
                                             <span>From Notes: {stats[lesson._id]?.from_notes || 0}</span>
                                             <span className="mx-2">|</span>

@@ -6,23 +6,24 @@ const QuestionSchema = new mongoose.Schema({
     ref: 'Lesson',
     required: true,
   },
-  createdBy: {
+  workspace:
+  {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
+    ref: 'Workspace',
+    required: true
   },
   type: {
     type: String,
-    enum: ['mcq', 'fill-in-the-blank', 'translation'], // mcq = multiple choice
+    enum: ['mcq', 'fill-in-the-blank', 'translation'],
     required: true,
   },
   questionText: {
     type: String,
     required: true,
-    unique: true,
+    // unique: true, <-- REMOVE THIS LINE
   },
   options: {
-    type: [String], // Array of strings for MCQ options
+    type: [String],
   },
   answer: {
     type: String,
@@ -34,11 +35,15 @@ const QuestionSchema = new mongoose.Schema({
     required: true,
   },
   noteSnippet: {
-    type: String, // Optional: The exact text from notes this was based on
+    type: String,
   },
   explanation: {
-    type: String, 
+    type: String,
   },
 }, { timestamps: true });
+
+// --- ADD THIS LINE ---
+// This ensures questionText is unique only *within* the same workspace
+QuestionSchema.index({ workspace: 1, questionText: 1 }, { unique: true });
 
 module.exports = mongoose.model('Question', QuestionSchema);

@@ -1,25 +1,20 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 const NoteSchema = new mongoose.Schema({
-  lesson: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Lesson",
-    required: true,
-  },
-  content: {
-    type: mongoose.Schema.Types.Mixed, // <-- allows JSON or any object
-    required: true,
-  },
-  type: {
-    type: String,
-    enum: ["from_notes", "extra"],
-    default: "from_notes",
-  },
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-    required: true,
-  },
+    workspace: { // Replaces createdBy
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Workspace',
+        required: true,
+    },
+    lesson: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Lesson',
+        required: true,
+    },
+    content: {
+        type: mongoose.Schema.Types.Mixed,
+        required: true,
+    },
 }, { timestamps: true });
 
-module.exports = mongoose.model("Note", NoteSchema);
+module.exports = mongoose.model('Note', NoteSchema);

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import authService from '../api/authApi';
-import axios from 'axios'; 
+import apiClient from '../api/apiClient';
 var BASE_URL = import.meta.env.VITE_API_URL;
 export default function LoginPage() {
     const [email, setEmail] = useState('');
@@ -28,7 +28,7 @@ export default function LoginPage() {
     useEffect(() => {
         const wakeUpServer = async () => {
             try {
-                await axios.get(BASE_URL); 
+                await apiClient.get(BASE_URL); 
                 setServerReady(true);
             } catch (err) {
                 setError('Could not connect to the server. Please try again later.');

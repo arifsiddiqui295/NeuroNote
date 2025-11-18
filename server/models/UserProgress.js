@@ -26,6 +26,12 @@ const UserProgressSchema = new mongoose.Schema({
         type: Date,
         default: Date.now,
     },
+    workspace:
+    {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Workspace',
+        required: true
+    },
     correctCount: { type: Number, default: 0 },
     incorrectCount: { type: Number, default: 0 },
 }, { timestamps: true });

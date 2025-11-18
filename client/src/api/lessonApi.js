@@ -5,33 +5,26 @@ const BASE_URL = import.meta.env.VITE_API_URL;
 // 2. Create the specific URL for your auth service
 const API_URL = `${BASE_URL}/lessons`;
 const createLesson = async (lessonData) => {
-    const config = {
-        headers: getAuthHeader(),
-    };
-    const response = await apiClient.post(API_URL, lessonData, config);
-    return response.data;
-};
-// Function to get the auth token from localStorage
-const getAuthHeader = () => {
-    const user = JSON.parse(localStorage.getItem('user'));
-    if (user && user.token) {
-        return { Authorization: `Bearer ${user.token}` };
-    }
-    return {};
+  const response = await apiClient.post(API_URL, lessonData);
+  return response.data;
 };
 
 // Function to fetch all lessons for the logged-in user
-const getLessons = async () => {
-    const config = {
-        headers: getAuthHeader(),
-    };
-    const response = await apiClient.get(API_URL, config);
-    return response.data;
+const getLessons = async (workspaceId) => {
+  const response = await apiClient.get(`${API_URL}/workspace/${workspaceId}`);
+  return response.data;
 };
 
+
+const deleteLesson = async (lessonId) => {
+  // This calls the backend DELETE /api/lessons/:lessonId route
+  const response = await apiClient.delete(`${API_URL}/${lessonId}`);
+  return response.data;
+};
 const lessonService = {
-    getLessons,
-    createLesson
+  getLessons,
+  createLesson,
+  deleteLesson
 };
 
 export default lessonService;

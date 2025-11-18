@@ -9,7 +9,12 @@ import LessonPage from './pages/LessonPage';
 import QuizSetupPage from './pages/QuizSetupPage';
 import QuizPlayerPage from './pages/QuizPlayerPage';
 import { ToastContainer } from 'react-toastify';
+import WorkspacePage from './pages/WorkspacePage';
+import { useEffect } from 'react';
 function App() {
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
   return (
     <>
       <Routes>
@@ -25,6 +30,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="workspace/:workspaceId"
+            element={
+              <ProtectedRoute>
+                <WorkspacePage />
               </ProtectedRoute>
             }
           />
@@ -45,7 +58,7 @@ function App() {
             }
           />
           <Route
-            path="quiz/setup"
+            path="quiz/setup/:workspaceId"
             element={
               <ProtectedRoute>
                 <QuizSetupPage />

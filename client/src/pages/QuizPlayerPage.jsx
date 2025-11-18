@@ -4,6 +4,7 @@ import questionService from '../api/questionApi';
 import Modal from '../components/Modal';
 import { toast } from 'react-toastify';
 import progressService from '../api/progressApi';
+
 export default function QuizPlayerPage() {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
@@ -14,32 +15,30 @@ export default function QuizPlayerPage() {
     const [quizFinished, setQuizFinished] = useState(false);
     const [loading, setLoading] = useState(true);
     const [userAnswer, setUserAnswer] = useState('');
-
-    // State for answer feedback
     const [selectedAnswer, setSelectedAnswer] = useState(null);
     const [isAnswered, setIsAnswered] = useState(false);
-
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
     const [reportComment, setReportComment] = useState('');
     const [isReporting, setIsReporting] = useState(false);
-
     const [reportResponse, setReportResponse] = useState(null);
     const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
-
-    const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false); // State for confirmation modal
+    const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
     const [questionToDelete, setQuestionToDelete] = useState(null);
     const [isDeleting, setIsDeleting] = useState(false);
+
+    // NEW: Get workspaceId from the URL
+    const workspaceId = searchParams.get('workspaceId');
+
     useEffect(() => {
         const loadQuestions = async () => {
             setLoading(true);
-            // Reset all quiz state for a fresh start
             setIsAnswered(false);
             setSelectedAnswer(null);
             setCurrentQuestionIndex(0);
             setScore(0);
             setQuizFinished(false);
+            setReportResponse(null);
 
-            // Get parameters from the URL
             const mode = searchParams.get('mode');
             const limit = searchParams.get('limit');
             const lessonIds = searchParams.get('lessonIds')?.split(',');
@@ -47,38 +46,37 @@ export default function QuizPlayerPage() {
 
             try {
                 let data;
-                // Scenario 1: Questions were passed directly after AI generation
+
+                // Check for workspaceId first. It's required for most fetches.
                 if (location.state?.questions) {
                     data = location.state.questions;
-                }
-                // Scenario 2: It's a review session
-                else if (mode === 'review') {
-                    data = await progressService.getReviewQuestions(limit);
-                }
-                // Scenario 3: It's a "Smart Quiz"
-                else if (mode === 'smart-quiz' && lessonIds) {
-                    data = await questionService.getSmartQuizQuestions({ lessonIds, limit });
-                }
-                // Scenario 4: It's a standard quiz from the setup page
-                else if (lessonIds) {
-                    data = await questionService.getQuizQuestions({ lessonIds, limit, source });
+                } else if (!workspaceId) {
+                    toast.error("Workspace ID is missing.");
+                    setQuestions([]);
+                } else if (mode === 'review') {
+                    data = await progressService.getReviewQuestions(workspaceId, limit);
+                } else if (mode === 'smart-quiz' && lessonIds) {
+                    data = await questionService.getSmartQuizQuestions(workspaceId, { lessonIds, limit });
+                } else if (lessonIds) {
+                    data = await questionService.getQuizQuestions(workspaceId, { lessonIds, limit, source });
                 }
 
                 setQuestions(data || []);
             } catch (err) {
                 console.error("Failed to load questions:", err);
-                setQuestions([]); // Ensure questions is an empty array on error
+                setQuestions([]);
             } finally {
                 setLoading(false);
             }
         };
         loadQuestions();
     }, [searchParams, location.state]);
+
     const handleNextQuestion = () => {
         setIsAnswered(false);
         setSelectedAnswer(null);
         setUserAnswer('');
-        setReportResponse('');
+        setReportResponse(null);
         const nextQuestion = currentQuestionIndex + 1;
         if (nextQuestion < questions.length) {
             setCurrentQuestionIndex(nextQuestion);
@@ -89,7 +87,6 @@ export default function QuizPlayerPage() {
 
     const handleAnswerSubmit = async (answer) => {
         if (isAnswered) return;
-
         setSelectedAnswer(answer);
         setIsAnswered(true);
 
@@ -101,12 +98,12 @@ export default function QuizPlayerPage() {
             setScore(score + 1);
         }
 
-        // --- NEW: Update SRS progress ---
         try {
-            await progressService.updateProgress(currentQuestion._id, wasCorrect);
+            // NEW: Pass workspaceId to the progress update
+            await progressService.updateProgress(currentQuestion._id, wasCorrect, workspaceId);
         } catch (error) {
             console.error("Failed to update progress:", error);
-            // Optionally show a toast error if progress update fails
+            toast.error("Failed to save your progress.");
         }
     };
 
@@ -116,13 +113,14 @@ export default function QuizPlayerPage() {
         }
         const correctAnswer = questions[currentQuestionIndex].answer;
         if (option.trim().toLowerCase() === correctAnswer.trim().toLowerCase()) {
-            return 'bg-green-600 text-white'; // Correct answer
+            return 'bg-green-600 text-white';
         }
         if (option.trim().toLowerCase() === selectedAnswer.trim().toLowerCase()) {
-            return 'bg-red-600 text-white'; // Incorrect selection
+            return 'bg-red-600 text-white';
         }
-        return 'bg-gray-700 disabled:opacity-50'; // Other options
+        return 'bg-gray-700 opacity-50 cursor-not-allowed';
     };
+
     const handleReportSubmit = async (comment) => {
         if (!comment) {
             toast.error('Please describe the issue.');
@@ -132,21 +130,18 @@ export default function QuizPlayerPage() {
         try {
             const currentQuestion = questions[currentQuestionIndex];
             const evaluation = await questionService.autofixQuestion(currentQuestion._id, comment);
-
-            // Store the AI's full response in state
             setReportResponse(evaluation.reasoning);
-
             if (evaluation.isUserCorrect) {
                 toast.success('You were right! The question has been fixed.');
             } else {
                 toast.info('Feedback submitted. Our AI analysis is available.');
             }
-
             setIsReportModalOpen(false);
+            setReportComment('');
         } catch (error) {
             toast.error('Sorry, there was an error submitting your report.');
+            console.error('Report submission error:', error);
         } finally {
-            setReportComment('');
             setIsReporting(false);
         }
     };
@@ -162,23 +157,14 @@ export default function QuizPlayerPage() {
         try {
             await questionService.deleteQuestion(questionToDelete);
             toast.success('Question deleted successfully.');
-
-            // Remove the question from the current quiz session
             const remainingQuestions = questions.filter(q => q._id !== questionToDelete);
             setQuestions(remainingQuestions);
 
-            // Handle UI update after deletion
             if (remainingQuestions.length === 0) {
-                setQuizFinished(true); // End quiz if no questions left
-            } else if (currentQuestionIndex >= remainingQuestions.length) {
-                // If the deleted question was the last one, go back one index
-                setCurrentQuestionIndex(remainingQuestions.length - 1);
-                handleNextQuestion(); // Reset UI state for the new last question
+                setQuizFinished(true);
             } else {
-                // If deleted from middle, just reset the view for the question now at this index
                 handleNextQuestion();
             }
-
         } catch (error) {
             toast.error('Failed to delete question.');
         } finally {
@@ -187,7 +173,7 @@ export default function QuizPlayerPage() {
             setIsDeleting(false);
         }
     };
-    // --- Styled States ---
+
     if (loading) return (
         <div className='flex flex-col h-screen justify-center items-center text-white bg-gray-900'> {/* Assuming bg-gray-900 for full screen */}
             <div className="relative flex items-center justify-center mb-4">
@@ -204,15 +190,15 @@ export default function QuizPlayerPage() {
 
     if (quizFinished) {
         return (
-            <div className="min-h-screen bg-gray-900 text-white flex flex-col justify-center items-center  p-4">
+            <div className="min-h-screen bg-gray-900 text-white flex flex-col justify-center items-center p-4">
                 <div className="text-center bg-gray-800 p-8 rounded-lg shadow-xl">
-                    <h1 className="text-3xl font-bold">Quiz Complete!</h1>
-                    <p className="text-xl mt-4">Your final score is: {score} out of {questions.length}</p>
+                    <h1 className="text-4xl font-bold">Quiz Complete!</h1>
+                    <p className="text-2xl mt-4">Your final score is: {score} out of {questions.length}</p>
                     <button
-                        onClick={() => navigate('/quiz/setup')}
-                        className="mt-6 px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-semibold"
+                        onClick={() => navigate(`/workspace/${workspaceId}`)} // Go back to workspace
+                        className="mt-8 px-8 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 font-semibold"
                     >
-                        Take Another Quiz
+                        Back to Lessons
                     </button>
                 </div>
             </div>
@@ -220,17 +206,18 @@ export default function QuizPlayerPage() {
     }
 
     if (!questions || questions.length === 0) return (
-        <div className="flex justify-center items-center h-screen bg-gray-900 text-white">
-            No questions found for the selected criteria.
+        <div className="flex flex-col justify-center items-center h-screen bg-gray-900 text-white text-center p-4">
+            <h2 className="text-2xl font-bold">No Questions Found</h2>
+            <p className="text-gray-400 mt-2">Please generate some questions for the selected lessons first.</p>
+            <button onClick={() => navigate(`/workspace/${workspaceId}`)} className="mt-6 px-6 py-2 bg-blue-600 rounded-md">Back to Lessons</button>
         </div>
     );
 
     const currentQuestion = questions[currentQuestionIndex];
 
-    // --- Main Quiz Player UI ---
     return (
         <div className="min-h-screen bg-gray-900 text-gray-200 flex items-center justify-center pt-10 p-4">
-            <div className="container mx-auto max-w-2xl bg-gray-800 p-6 rounded-lg shadow-xl transform -translate-y-12">
+            <div className="container mx-auto max-w-2xl bg-gray-800 p-6 rounded-lg shadow-xl">
                 <div className="mb-6">
                     <p className="text-sm text-gray-400">Question {currentQuestionIndex + 1} of {questions.length}</p>
                     <h2 className="text-2xl font-semibold mt-2 text-white">{currentQuestion.questionText}</h2>
@@ -257,21 +244,20 @@ export default function QuizPlayerPage() {
                             type="text"
                             value={userAnswer}
                             onChange={(e) => setUserAnswer(e.target.value)}
-                            className="w-full px-4 py-3 mt-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                            className="w-full px-4 py-3 mt-2 bg-gray-700 border border-gray-600 rounded-md text-white placeholder-gray-400"
                             placeholder="Type your answer here..."
                             disabled={isAnswered}
                         />
                         {!isAnswered && (
-                            <button type="submit" className="mt-4 w-full px-6 py-3 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700">
+                            <button type="submit" className="mt-4 w-full px-6 py-3 bg-green-600 text-white font-semibold rounded-md">
                                 Submit Answer
                             </button>
                         )}
                     </form>
                 )}
+
                 {isAnswered && (
                     <div className="mt-6 p-4 rounded-lg bg-gray-700 space-y-4">
-
-                        {/* Correct/Incorrect Feedback */}
                         <div>
                             {selectedAnswer.trim().toLowerCase() === currentQuestion.answer.trim().toLowerCase() ? (
                                 <p className="text-green-400 font-semibold text-xl text-center">Correct!</p>
@@ -279,54 +265,66 @@ export default function QuizPlayerPage() {
                                 <p className="text-red-400 font-semibold text-lg text-center">Correct Answer: {currentQuestion.answer}</p>
                             )}
                         </div>
-
-                        {/* Explanation Box */}
                         {currentQuestion.explanation && (
                             <div className="text-sm text-left text-gray-200 bg-gray-800 p-3 rounded-md">
                                 <p><span className="font-bold">Why?</span> {currentQuestion.explanation}</p>
                             </div>
                         )}
+                        <div className="pt-2 flex flex-col gap-3">
 
-                        {/* Secondary Actions */}
-                        <div className="flex justify-between items-center pt-2">
-                            <button
-                                onClick={() => setIsReportModalOpen(true)}
-                                className=" bg-yellow-600 text-white font-semibold rounded-md px-2 py-1 transition-colors pointer-events-auto hover:bg-yellow-700 "
-                            >
-                                Report Issue
-                            </button>
-                            <button
-                                onClick={handleDeleteQuestion} // We'll create this function
-                                className="text-xs text-red-400 hover:text-red-300 flex items-center"
-                                title="Delete this question permanently"
-                            >
-                                {/* Trash Can Icon */}
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                                </svg>
-                                Delete
-                            </button>
-                            {/* UPDATED: This button now opens the analysis modal */}
-                            {reportResponse && (
+                            {/* Secondary Actions: Report/Delete (Grouped on a single line for minimalism) */}
+                            <div className="flex justify-between items-center text-sm">
+
+                                {/* Report Issue Button (Outline/Minimalistic) */}
                                 <button
-                                    onClick={() => setIsAnalysisModalOpen(true)}
-                                    className="text-xs text-blue-400 hover:underline"
+                                    onClick={() => setIsReportModalOpen(true)}
+                                    // Outline style for lower visual weight, smaller text
+                                    className="text-yellow-500 border border-yellow-600 rounded-full px-4 py-1 
+                               font-semibold transition-colors hover:bg-yellow-600 hover:text-white"
                                 >
-                                    Show AI Analysis
+                                    Report Issue
                                 </button>
-                            )}
-                        </div>
 
-                        {/* Primary Action Button */}
-                        <button
-                            onClick={handleNextQuestion}
-                            className="w-full px-8 py-3 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700"
-                        >
-                            {currentQuestionIndex + 1 < questions.length ? 'Next Question' : 'Finish Quiz'}
-                        </button>
+                                <div className="flex items-center space-x-3">
+                                    {/* Show AI Analysis (Conditional) */}
+                                    {reportResponse && (
+                                        <button
+                                            onClick={() => setIsAnalysisModalOpen(true)}
+                                            className="text-blue-400 hover:underline font-medium"
+                                        >
+                                            Show AI Analysis
+                                        </button>
+                                    )}
+
+                                    {/* Delete Question Button (Icon/Text Link Style) */}
+                                    <button
+                                        onClick={handleDeleteQuestion}
+                                        className="text-red-400 hover:text-red-300 flex items-center transition-colors font-medium"
+                                        title="Delete this question permanently"
+                                    >
+                                        {/* Trash Can Icon */}
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                                        </svg>
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Main Action: Next Question / Finish Quiz (Full Width, Prominent) */}
+                            <button
+                                onClick={handleNextQuestion}
+                                className="w-full px-8 py-3 bg-blue-600 text-white font-bold rounded-full mt-3 
+                           hover:bg-blue-700 transition duration-200 text-lg shadow-md" // Pill shape and shadow for prominence
+                            >
+                                {currentQuestionIndex + 1 < questions.length ? 'Next Question' : 'Finish Quiz'}
+                            </button>
+
+                        </div>
                     </div>
                 )}
             </div>
+
             <Modal isOpen={isReportModalOpen} onClose={() => setIsReportModalOpen(false)}>
                 <h3 className="text-xl font-semibold mb-4">Report an Issue</h3>
                 <p className="text-gray-400 mb-2">What's wrong with this question?</p>
@@ -335,16 +333,17 @@ export default function QuizPlayerPage() {
                     onChange={(e) => setReportComment(e.target.value)}
                     className="w-full p-2 border bg-gray-700 border-gray-600 rounded-md shadow-sm"
                     rows="3"
-                    placeholder="e.g., Typo in the correct answer, Option C is also correct..."
+                    placeholder="e.g., Typo in the correct answer..."
                 ></textarea>
                 <button
                     onClick={() => handleReportSubmit(reportComment)}
-                    className="mt-4 w-full px-6 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700 disabled:bg-gray-500"
+                    className="mt-4 w-full px-6 py-2 bg-blue-600 text-white font-semibold rounded-md"
                     disabled={isReporting}
                 >
                     {isReporting ? 'Submitting...' : 'Submit Report'}
                 </button>
             </Modal>
+
             <Modal isOpen={isAnalysisModalOpen} onClose={() => setIsAnalysisModalOpen(false)}>
                 <h3 className="text-xl font-semibold mb-4">AI Analysis</h3>
                 <p className="text-gray-300 whitespace-pre-wrap">{reportResponse}</p>
@@ -357,23 +356,24 @@ export default function QuizPlayerPage() {
                     </button>
                 </div>
             </Modal>
+
             <Modal isOpen={isDeleteConfirmOpen} onClose={() => !isDeleting && setIsDeleteConfirmOpen(false)}>
                 <h3 className="text-xl font-semibold mb-4 text-red-400">Confirm Deletion</h3>
                 <p className="text-gray-300 mb-6">Are you sure you want to permanently delete this question? This action cannot be undone.</p>
                 <div className="flex justify-end space-x-4">
                     <button
                         onClick={() => setIsDeleteConfirmOpen(false)}
-                        className="px-6 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-500 disabled:opacity-50"
-                        disabled={isDeleting} // Disable while deleting
+                        className="px-6 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-500"
+                        disabled={isDeleting}
                     >
                         Cancel
                     </button>
                     <button
                         onClick={confirmDeleteQuestion}
-                        className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
-                        disabled={isDeleting} // Disable while deleting
+                        className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                        disabled={isDeleting}
                     >
-                        {isDeleting ? 'Deleting...' : 'Delete'} {/* Show loading text */}
+                        {isDeleting ? 'Deleting...' : 'Delete'}
                     </button>
                 </div>
             </Modal>

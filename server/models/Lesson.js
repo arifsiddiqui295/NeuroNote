@@ -1,23 +1,25 @@
 const mongoose = require('mongoose');
 
 const LessonSchema = new mongoose.Schema({
-  title: {
-    type: String,
-    required: true,
-  },
-  number: {
-    type: Number,
-    required: true,
-    unique: true, // Lesson 6, Lesson 7 etc.
-  },
-  description: {
-    type: String,
-  },
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-    required: true,
-  }
+    workspace: { // Replaces createdBy
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Workspace',
+        required: true,
+    },
+    title: {
+        type: String,
+        required: true,
+    },
+    number: {
+        type: Number,
+        required: true,
+    },
+    description: {
+        type: String,
+    },
 }, { timestamps: true });
 
-module.exports = mongoose.model("Lesson", LessonSchema);
+// We should index workspace and number together
+LessonSchema.index({ workspace: 1, number: 1 }, { unique: true });
+
+module.exports = mongoose.model('Lesson', LessonSchema);

@@ -1,52 +1,51 @@
 import React, { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import workspaceService from '../api/workspaceApi';
 import { useAuth } from '../context/AuthContext';
-import lessonService from '../api/lessonApi';
-import { Link } from 'react-router-dom';
+import Modal from '../components/Modal';
+
 export default function DashboardPage() {
-  const { logout } = useAuth();
-  const [lessons, setLessons] = useState([]);
+  const { user } = useAuth();
+  const [workspaces, setWorkspaces] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const [showForm, setShowForm] = useState(false);
-  const [newLessonTitle, setNewLessonTitle] = useState('');
-  const [newLessonNumber, setNewLessonNumber] = useState('');
-  const [newLessonDesc, setNewLessonDesc] = useState('');
-
-
+  // State for the "Create Workspace" modal
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState('');
+  const [newWorkspaceContext, setNewWorkspaceContext] = useState('');
+  // Inside DashboardPage.jsx or WorkspacePage.jsx
   useEffect(() => {
-    const fetchLessons = async () => {
+    // This scrolls the browser viewport to the top of the page.
+    window.scrollTo(0, 0);
+  }, []); // Run only once when the component mounts
+  useEffect(() => {
+    const fetchWorkspaces = async () => {
       try {
-        const data = await lessonService.getLessons();
-        setLessons(data);
+        const data = await workspaceService.getWorkspaces();
+        setWorkspaces(data);
       } catch (err) {
-        console.log(err);
-        setError('Failed to fetch lessons, Please Login again.');
+        setError('Failed to fetch workspaces.');
       } finally {
         setLoading(false);
       }
     };
-
-    fetchLessons();
+    fetchWorkspaces();
   }, []);
 
-  const handleCreateLesson = async (e) => {
+  const handleCreateWorkspace = async (e) => {
     e.preventDefault();
     try {
-      const newLesson = await lessonService.createLesson({
-        title: newLessonTitle,
-        number: newLessonNumber,
-        description: newLessonDesc,
+      const newWorkspace = await workspaceService.createWorkspace({
+        name: newWorkspaceName,
+        context: newWorkspaceContext,
       });
-      setLessons([...lessons, newLesson].sort((a, b) => a.number - b.number)); // Add to list and sort
-      // Reset form
-      setShowForm(false);
-      setNewLessonTitle('');
-      setNewLessonNumber('');
-      setNewLessonDesc('');
+      setWorkspaces([...workspaces, newWorkspace]);
+      setIsModalOpen(false);
+      setNewWorkspaceName('');
+      setNewWorkspaceContext('');
     } catch (err) {
-      setError('Failed to create lesson. The lesson number might already exist.');
-      console.error(err);
+      setError('Failed to create workspace.');
     }
   };
 
@@ -61,64 +60,84 @@ export default function DashboardPage() {
               alt="NeuroNote Logo" className="h-10 w-10" />
           </div>
         </div>
-        <p className="text-xl">Loading lessons...</p>
+        <p className="text-xl">Loading Workspaces...</p>
       </div>
     );
   }
-  if (error) return <div className="text-red-500">{error}</div>;
+
 
   return (
-    <div className='bg-gray-900'>
-      <div
-        className=" container mx-auto p-4">
-        {/* --- HEADER --- */}
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl text-white font-bold">Your Lessons</h1>
-          <div className="flex items-center space-x-4">
-            {/* NEW: Review Session Button */}
-          </div>
-        </div>
+    <div className='bg-gray-900 min-h-screen '>
+      <div className=" container mx-auto p-4">
+        <div className="flex flex-col gap-3 mb-6 sm:flex-row sm:justify-between sm:items-center">
 
-        {/* --- CREATE LESSON SECTION (Moved here) --- */}
-        <div className="mb-6">
+          {/* Workspace Title: Always occupies its space at the top */}
+          <h1 className="text-3xl text-white font-extrabold sm:text-4xl">
+            Your Workspaces
+          </h1>
+
+          {/* Primary Action Button: Takes full width on mobile, moves below the title */}
           <button
-            onClick={() => setShowForm(!showForm)}
-            className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-800"
+            onClick={() => setIsModalOpen(true)}
+            // Added w-full for mobile, adjusted py-3 for better tap target, increased font
+            className="px-4 py-3 text-green-400 bg-transparent border-2 border-green-600 rounded-full hover:bg-green-600 hover:text-white font-bold text-lg transition duration-150 shrink-0 w-full sm:w-auto sm:text-base sm:py-2"
           >
-            {showForm ? 'Cancel' : '+ Create New Lesson'}
+            + New Workspace
           </button>
 
-          {showForm && (
-            <form onSubmit={handleCreateLesson} className="mt-4 p-4 bg-gray-100 rounded-lg shadow">
-              <h3 className="text-lg font-semibold mb-2">New Lesson Details</h3>
-              {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
-              <div className="space-y-2">
-                <input type="number" placeholder="Lesson Number" value={newLessonNumber} onChange={(e) => setNewLessonNumber(e.target.value)} required className="w-full p-2 border rounded" />
-                <input type="text" placeholder="Lesson Title" value={newLessonTitle} onChange={(e) => setNewLessonTitle(e.target.value)} required className="w-full p-2 border rounded" />
-                <input type="text" placeholder="Description" value={newLessonDesc} onChange={(e) => setNewLessonDesc(e.target.value)} className="w-full p-2 border rounded" />
-              </div>
-              <button type="submit" className="mt-4 w-full px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">
-                Save Lesson
-              </button>
-            </form>
-          )}
         </div>
+        {error && <p className="text-red-500">{error}</p>}
 
-        {/* --- LESSON LIST --- */}
-        {lessons.length === 0 ? (
-          <p className='text-white'>No lessons found. Click "Create New Lesson" to get started.</p>
+        {workspaces.length === 0 ? (
+          <p className="text-gray-400 text-center">No workspaces found. Click "New Workspace" to get started.</p>
         ) : (
-          <ul className="space-y-5">
-            {lessons.map((lesson) => (
-              <li key={lesson._id}>
-                <Link to={`/lesson/${lesson._id}`} className="block p-4 bg-gray-400 shadow rounded-lg hover:bg-gray-50">
-                  <h2 className="text-xl font-semibold">{`Lesson ${lesson.number}: ${lesson.title}`}</h2>
-                  <p className="text-gray-600">{lesson.description}</p>
-                </Link>
-              </li>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {workspaces.map((workspace) => (
+              <Link key={workspace._id} to={`/workspace/${workspace._id}`} className="block p-6 bg-gray-300 shadow rounded-lg hover:bg-gray-100  transition-colors">
+                <h2 className="text-2xl font-semibold text-black">{workspace.name}</h2>
+                <p className="text-gray-00">{workspace.context}</p>
+              </Link>
             ))}
-          </ul>
+          </div>
         )}
+        <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)}>
+          <form onSubmit={handleCreateWorkspace}>
+            <h3 className="text-2xl font-bold text-white mb-4">Create New Workspace</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-gray-300 mb-1">Workspace Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g., German A1"
+                  value={newWorkspaceName}
+                  onChange={(e) => setNewWorkspaceName(e.target.value)}
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-1">AI Context</label>
+                <input
+                  type="text"
+                  placeholder="e.g., German Language"
+                  value={newWorkspaceContext}
+                  onChange={(e) => setNewWorkspaceContext(e.target.value)}
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded-md text-white"
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-1">Tell the AI the subject (e.g., "Data Structures" or "Machine Learning").</p>
+              </div>
+            </div>
+            <div className="text-right mt-6">
+              <button
+                type="submit"
+                className="px-6 py-2 bg-blue-600 text-white font-semibold rounded-md hover:bg-blue-700"
+              >
+                Create
+              </button>
+            </div>
+          </form>
+        </Modal>
       </div>
     </div>
 
