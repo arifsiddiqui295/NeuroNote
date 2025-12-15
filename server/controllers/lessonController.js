@@ -9,7 +9,7 @@ const UserProgress = require('../models/UserProgress');
 const createLesson = async (req, res) => {
   try {
     const { title, number, description, workspaceId } = req.body;
-    console.log("Creating lesson with data:", req.body);
+    // console.log("Creating lesson with data:", req.body);
     // Check if user has permission to add to this workspace (must be admin or editor)
     if (req.memberRole === 'viewer') {
       return res.status(403).json({ message: 'You do not have permission to create lessons in this workspace.' });

@@ -10,8 +10,10 @@ import QuizSetupPage from './pages/QuizSetupPage';
 import QuizPlayerPage from './pages/QuizPlayerPage';
 import { ToastContainer } from 'react-toastify';
 import WorkspacePage from './pages/WorkspacePage';
+import { useNotifications } from './hooks/useNotifications';
 import { useEffect } from 'react';
 function App() {
+  useNotifications();
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);

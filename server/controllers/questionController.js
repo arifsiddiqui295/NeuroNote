@@ -83,14 +83,12 @@ const generateQuestions = async (req, res) => {
         if (req.memberRole === 'viewer') {
             return res.status(403).json({ message: 'Viewers cannot generate questions.' });
         }
-
         const { workspaceId } = req.params;
         const { noteIds, source = 'from_notes', count = 5 } = req.body;
-
+        // console.log("AI question generation requested with:", req.body);
         if (!noteIds || noteIds.length === 0) {
             return res.status(400).json({ message: 'Note IDs are required' });
         }
-
         const notes = await Note.find({
             '_id': { $in: noteIds },
             'workspace': workspaceId
@@ -99,17 +97,20 @@ const generateQuestions = async (req, res) => {
         if (notes.length === 0) {
             return res.status(404).json({ message: 'No valid notes found in this workspace.' });
         }
-
-        // --- THIS IS THE FIX ---
         // Check for orphaned notes (lesson has been deleted)
         if (!notes[0].lesson || !notes[0].lesson.workspace) {
             console.error(`Data integrity error: Note ${notes[0]._id} is orphaned or its lesson is missing a workspace.`);
             return res.status(404).json({ message: 'Data integrity error: Could not find a valid lesson for the selected note.' });
         }
-        // --- END OF FIX ---
 
         const combinedMarkdown = notes.map(note => jsonToMarkdown(note.content)).join('\n\n---\n\n');
 
+        // 3. SECURITY CHECK: Fail if empty
+        if (!combinedMarkdown || combinedMarkdown.trim().length < 10) {
+            return res.status(400).json({
+                message: "The selected notes appear to be empty. Please write some text in your lesson before generating a quiz."
+            });
+        }
         const aiContext = notes[0].lesson.workspace.context || "General Knowledge";
 
         let prompt;
@@ -120,7 +121,7 @@ const generateQuestions = async (req, res) => {
             2. You MUST respond with a valid JSON array of objects. Do not include any text outside of the JSON array.
             3. Each object must have the structure: {"type": "...", "questionText": "...", "options": [...], "answer": "...", "explanation": "A brief, easy-to-understand, and beginner-friendly one-sentence explanation of why the answer is correct.."}
             4. IMPORTANT: The "type" field MUST be either "mcq" or "fill-in-the-blank".
-            
+
             Here are the notes:
             \`\`\`markdown
             ${combinedMarkdown}
@@ -132,7 +133,7 @@ const generateQuestions = async (req, res) => {
             2. You MUST respond with a valid JSON array of objects. Do not include any text outside of the JSON array.
             3. Each object must have the structure: {"type": "...", "questionText": "...", "options": [...], "answer": "...", "explanation": "A brief, easy-to-understand, and beginner-friendly one-sentence explanation of why the answer is correct.."}
             4. IMPORTANT: The "type" field MUST be either "mcq" or "fill-in-the-blank".
-            
+
             Here are the notes for context:
             \`\`\`markdown
             ${combinedMarkdown}
@@ -150,6 +151,7 @@ const generateQuestions = async (req, res) => {
         }
 
         let generatedQuestions;
+
         try {
             const cleanedResponse = aiTextResponse.replace(/```json\n|```/g, '').trim();
             generatedQuestions = JSON.parse(cleanedResponse);

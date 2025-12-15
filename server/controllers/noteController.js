@@ -1,6 +1,7 @@
 const Note = require('../models/Note');
 const Lesson = require('../models/Lesson');
 const Workspace = require('../models/Workspace');
+const User = require('../models/User');
 
 // @desc    Get the single note for a specific lesson
 // @route   GET /api/notes/lesson/:lessonId
@@ -9,29 +10,28 @@ const getNotesByLesson = async (req, res) => {
     try {
         const { lessonId } = req.params;
 
-        // 1. Find the lesson to get its workspaceId
+        // 1. Find the lesson
         const lesson = await Lesson.findById(lessonId);
-        if (!lesson) {
-            return res.status(404).json({ message: 'Lesson not found' });
-        }
+        if (!lesson) return res.status(404).json({ message: 'Lesson not found' });
 
-        // 2. Check user's permission for that workspace
+        // 2. Get the workspace and member
         const workspace = await Workspace.findById(lesson.workspace);
         const member = workspace.members.find(
             (m) => m.user.toString() === req.user._id.toString()
         );
 
-        if (!member) {
-            return res.status(403).json({ message: 'You are not a member of this workspace.' });
-        }
+        if (!member) return res.status(403).json({ message: 'Not a member' });
 
-        // 3. Find and return the note associated with the lesson
+        // 3. Find the note
         const note = await Note.findOne({ lesson: lessonId });
-        if (!note) {
-            return res.status(404).json({ message: 'Note not found for this lesson' });
-        }
 
-        res.json(note);
+        // --- THIS IS THE CHANGE ---
+        // Return both the note AND the user's role
+        res.json({
+            note: note || null,
+            role: member.role
+        });
+
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -63,20 +63,27 @@ const updateNote = async (req, res) => {
 
         // 3. Check if the user has editing rights
         if (member.role === 'viewer') {
+            console.log('User role:', member);
+            const userssss = await User.findById(member._id);
+            console.log('User details:', userssss);
             return res.status(403).json({ message: 'You do not have permission to edit notes in this workspace.' });
         }
 
         // 4. Update the note
-        note.content = content;
-        await note.save();
-        res.json(note);
+        const updatedNote = await Note.findByIdAndUpdate(
+            noteId,
+            { content },
+            { new: true } // Return the updated doc
+        );
+
+        res.json(updatedNote);
 
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 };
 
-module.exports = { 
-    getNotesByLesson, 
-    updateNote 
+module.exports = {
+    getNotesByLesson,
+    updateNote
 };

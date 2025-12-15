@@ -72,18 +72,39 @@ export default function QuizPlayerPage() {
         loadQuestions();
     }, [searchParams, location.state]);
 
+    useEffect(() => {
+        if (!questions || questions.length === 0) {
+            setCurrentQuestionIndex(0);
+            return;
+        }
+        setCurrentQuestionIndex(prev => {
+            // if prev is out-of-range, move to last index; otherwise leave it
+            return Math.min(prev, questions.length - 1);
+        });
+    }, [questions]);
+    useEffect(() => {
+        setIsAnswered(false);
+        setSelectedAnswer(null);
+        setUserAnswer('');
+        setReportResponse(null);
+    }, [currentQuestionIndex]);
     const handleNextQuestion = () => {
         setIsAnswered(false);
         setSelectedAnswer(null);
         setUserAnswer('');
         setReportResponse(null);
-        const nextQuestion = currentQuestionIndex + 1;
-        if (nextQuestion < questions.length) {
-            setCurrentQuestionIndex(nextQuestion);
-        } else {
-            setQuizFinished(true);
-        }
+
+        setCurrentQuestionIndex(prev => {
+            const next = prev + 1;
+            if (next < questions.length) {
+                return next;
+            } else {
+                setQuizFinished(true);
+                return prev; // keep index stable if finished
+            }
+        });
     };
+
 
     const handleAnswerSubmit = async (answer) => {
         if (isAnswered) return;
@@ -157,22 +178,33 @@ export default function QuizPlayerPage() {
         try {
             await questionService.deleteQuestion(questionToDelete);
             toast.success('Question deleted successfully.');
-            const remainingQuestions = questions.filter(q => q._id !== questionToDelete);
-            setQuestions(remainingQuestions);
 
-            if (remainingQuestions.length === 0) {
-                setQuizFinished(true);
-            } else {
-                handleNextQuestion();
-            }
+            // Use functional update to ensure we operate on latest questions state
+            setQuestions(prevQuestions => {
+                const remaining = prevQuestions.filter(q => q._id !== questionToDelete);
+
+                // If no questions left, finish quiz
+                if (remaining.length === 0) {
+                    setQuizFinished(true);
+                }
+
+                return remaining;
+            });
+
+            // don't call handleNextQuestion() here — let the clamp effect handle index
         } catch (error) {
             toast.error('Failed to delete question.');
         } finally {
             setIsDeleteConfirmOpen(false);
             setQuestionToDelete(null);
             setIsDeleting(false);
+            setIsAnswered(false);
+            setSelectedAnswer(null);
+            setUserAnswer('');
+            setReportResponse(null);
         }
     };
+
 
     if (loading) return (
         <div className='flex flex-col h-screen justify-center items-center text-white bg-gray-900'> {/* Assuming bg-gray-900 for full screen */}
@@ -213,8 +245,29 @@ export default function QuizPlayerPage() {
         </div>
     );
 
-    const currentQuestion = questions[currentQuestionIndex];
+    const currentQuestion = questions[currentQuestionIndex] || null;
+    if (!currentQuestion) {
+        return (
+            <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center p-6">
+                <div className="w-full max-w-2xl bg-gray-800 p-6 rounded-lg shadow-xl space-y-6 animate-pulse">
 
+                    {/* Small header skeleton */}
+                    <div className="h-4 w-32 bg-gray-700 rounded"></div>
+
+                    {/* Question text skeleton */}
+                    <div className="h-6 w-3/4 bg-gray-700 rounded"></div>
+
+                    {/* Options skeleton */}
+                    <div className="space-y-4 mt-4">
+                        <div className="h-12 bg-gray-700 rounded-md"></div>
+                        <div className="h-12 bg-gray-700 rounded-md"></div>
+                        <div className="h-12 bg-gray-700 rounded-md"></div>
+                        <div className="h-12 bg-gray-700 rounded-md"></div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
     return (
         <div className="min-h-screen bg-gray-900 text-gray-200 flex items-center justify-center pt-10 p-4">
             <div className="container mx-auto max-w-2xl bg-gray-800 p-6 rounded-lg shadow-xl">

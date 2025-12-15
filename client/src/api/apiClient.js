@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { redirect } from 'react-router-dom';
 
 // Get the backend URL from your environment variables
 const BASE_URL = import.meta.env.VITE_API_URL;
@@ -30,7 +31,7 @@ apiClient.interceptors.response.use((response) => {
     // Remove the expired user data
     localStorage.removeItem('user');
     // Force a redirect to the login page to reset the app state
-    window.location.href = '/login';
+   redirect('/login');
   }
   return Promise.reject(error);
 });

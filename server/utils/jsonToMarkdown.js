@@ -1,58 +1,45 @@
-const jsonToMarkdown = (content) => {
-    if (!Array.isArray(content)) return '';
+const jsonToMarkdown = (data) => {
+    // 1. Handle Strings (HTML or Plain Text)
+    if (typeof data === 'string') return data;
 
-    const processNode = (node) => {
-        let markdown = '';
-        const childrenMarkdown = node.children ? node.children.map(processNode).join('') : '';
-
-        switch (node.type) {
-            case 'h1':
-                markdown = `# ${childrenMarkdown}\n\n`;
-                break;
-            case 'p':
-                markdown = `${childrenMarkdown}\n\n`;
-                break;
-            case 'strong':
-                markdown = `**${childrenMarkdown}**`;
-                break;
-            case 'u':
-                markdown = `**${childrenMarkdown}**`;
-                break;
-            case 'br':
-                markdown = `\n`;
-                break;
-            case 'text':
-                markdown = node.value || '';
-                break;
-            case 'table':
-                const rows = node.children
-                    .filter(c => c.type === 'tbody' || c.type === 'thead')[0]
-                    ?.children.filter(c => c.type === 'tr');
-
-                if (!rows || rows.length === 0) break;
-
-                const headerCells = rows[0].children.filter(c => c.type === 'th' || c.type === 'td');
-                const headerContent = headerCells.map(cell => cell.children.map(processNode).join('').trim());
-                markdown += `| ${headerContent.join(' | ')} |\n`;
-
-                const separator = headerCells.map(() => '---').join(' | ');
-                markdown += `| ${separator} |\n`;
-
-                for (let i = 1; i < rows.length; i++) {
-                    const bodyCells = rows[i].children.filter(c => c.type === 'td');
-                    const bodyContent = bodyCells.map(cell => cell.children.map(processNode).join('').trim());
-                    markdown += `| ${bodyContent.join(' | ')} |\n`;
-                }
-                markdown += '\n';
-                break;
-
-            default:
-                markdown = childrenMarkdown;
+    // 2. Recursive Text Extraction
+    // This function hunts for "text" fields in any JSON structure (BlockNote, Quill, etc.)
+    let extractedText = "";
+    
+    const extract = (item) => {
+        if (!item) return;
+        
+        if (Array.isArray(item)) {
+            item.forEach(extract);
+            return;
         }
-        return markdown;
+
+        if (typeof item === 'object') {
+            // Add newlines for block elements to keep formatting clean
+            if (item.type === 'paragraph' || item.type === 'heading' || item.type === 'p' || item.type === 'h1') {
+                extractedText += "\n\n"; 
+            }
+            if (item.type === 'bulletListItem' || item.type === 'li') {
+                extractedText += "\n- ";
+            }
+
+            // Found a text property? Add it.
+            if (item.text) {
+                extractedText += item.text;
+            }
+            // Old format uses 'value' for text nodes
+            if (item.value) {
+                extractedText += item.value;
+            }
+            
+            // Recurse into content/children arrays
+            if (item.content) extract(item.content);
+            if (item.children) extract(item.children);
+        }
     };
 
-    return content.map(processNode).join('').trim();
+    extract(data);
+    return extractedText.trim();
 };
 
-module.exports=jsonToMarkdown;
+module.exports = jsonToMarkdown;

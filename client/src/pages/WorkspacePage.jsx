@@ -188,9 +188,18 @@ export default function WorkspacePage() {
                             <input type="text" placeholder="Lesson Title" value={newLessonTitle} onChange={(e) => setNewLessonTitle(e.target.value)} required className="w-full p-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-blue-500 focus:border-blue-500" />
                             <input type="text" placeholder="Description (Optional)" value={newLessonDesc} onChange={(e) => setNewLessonDesc(e.target.value)} className="w-full p-3 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-blue-500 focus:border-blue-500" />
                         </div>
-                        <button type="submit" className="mt-5 w-full px-6 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition duration-150 shadow-md">
-                            Save Lesson
-                        </button>
+                        <div className="flex sm:flex-row sm:space-x-4 gap-2">
+                            <button type="submit" className="mt-5 w-full px-6 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 transition duration-150 shadow-md">
+                                Save Lesson
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowForm(false);
+                                }}
+                                className="mt-5 w-full px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition duration-150 shadow-md">
+                                Close
+                            </button>
+                        </div>
                     </form>
                 )}
 

@@ -152,7 +152,7 @@ export default function Navbar() {
             {/* Mobile Menu Overlay */}
             <div
                 className={`
-                    fixed inset-0 z-30 transition-opacity duration-300
+                    fixed inset-0 z-50 transition-opacity duration-300
                     ${isMenuOpen ? ' bg-opacity-50' : 'bg-opacity-0 pointer-events-none'}
                 `}
                 onClick={handleMenuClose}

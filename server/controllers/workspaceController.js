@@ -4,6 +4,7 @@ const Lesson = require('../models/Lesson');
 const Note = require('../models/Note');
 const Question = require('../models/Question');
 const UserProgress = require('../models/UserProgress');
+const { sendNotification } = require('../utils/notificationManager');
 // @desc    Create a new workspace
 // @route   POST /api/workspaces
 // @access  Private
@@ -162,6 +163,13 @@ const updateMemberRole = async (req, res) => {
         // Update the role and save
         memberToUpdate.role = role;
         await workspace.save();
+        console.log("Updated member role:", memberToUpdate);
+        // Notify the user instantly ---
+        sendNotification(userId, {
+            type: 'ROLE_UPDATED',
+            workspaceId: workspace._id,
+            newRole: role
+        });
 
         res.status(200).json(workspace.members);
     } catch (error) {

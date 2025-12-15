@@ -1,51 +1,81 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Editor } from 'primereact/editor';
-import { parseDocument } from 'htmlparser2';
 import noteService from '../api/noteApi';
 import questionService from '../api/questionApi';
 import Modal from '../components/Modal';
-import uploadService from '../api/uploadApi';
 import { toast } from 'react-toastify';
-const jsonToHtml = (nodes) => {
+
+// Collaboration Imports
+import CollaborationWrapper from '../components/CollaborationWrapper';
+import RealTimeEditor from '../components/RealTimeEditor';
+import { useAuth } from '../context/AuthContext';
+
+// Helper to convert OLD JSON (htmlparser2) to HTML String
+// We use this to prep old data for BlockNote
+const oldJsonToHtml = (nodes) => {
   if (!nodes || !Array.isArray(nodes)) return '';
   return nodes.map(node => {
-    const childrenHtml = jsonToHtml(node.children);
-    const attrs = Object.entries(node.attrs || {}).map(([key, value]) => `${key}="${value}"`).join(' ');
     if (node.type === 'text') return node.value || '';
+    const childrenHtml = node.children ? oldJsonToHtml(node.children) : '';
+    const attrs = Object.entries(node.attrs || {}).map(([key, value]) => `${key}="${value}"`).join(' ');
     return `<${node.type} ${attrs}>${childrenHtml}</${node.type}>`;
   }).join('');
 };
 
 export default function LessonPage() {
-  const editorRef = useRef(null);
   const { lessonId } = useParams();
   const navigate = useNavigate();
-  const [noteContent, setNoteContent] = useState('');
+  const { user } = useAuth();
+  // State
+  const [editorInstance, setEditorInstance] = useState(null);
   const [noteId, setNoteId] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [workspaceId, setWorkspaceId] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
+
+  // Data to pass to editor
+  const [initialContent, setInitialContent] = useState(null);
+
+  // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [numQuestions, setNumQuestions] = useState(5);
   const [source, setSource] = useState('from_notes');
 
+
+  const [userRole, setUserRole] = useState('viewer');
+
+
+  // Auto-Save Timer Ref
+  const saveTimeoutRef = useRef(null);
+
+  // 1. Fetch Note Data
   useEffect(() => {
     const fetchNote = async () => {
       if (!lessonId) return;
       setLoading(true);
       try {
-        // The note object from the API includes its workspace ID
-        const note = await noteService.getNotesByLesson(lessonId);
+        // The API now returns { note, role }
+        const data = await noteService.getNotesByLesson(lessonId);
+        console.log("Fetched note data:", data);
+        // Extract role
+        setUserRole(data.role);
+        const note = data.note; // Get the actual note object
+
         if (note) {
-          setNoteContent(jsonToHtml(note.content));
           setNoteId(note._id);
-          setWorkspaceId(note.workspace); // NEW: Save the workspace ID
+          setWorkspaceId(note.workspace);
+
+          // (Your existing content loading logic here...)
+          if (typeof note.content === 'string') {
+            setInitialContent(note.content);
+          } else if (Array.isArray(note.content)) {
+            // ... check for old/new format ...
+            setInitialContent(note.content);
+          }
         }
       } catch (err) {
         setError('Failed to fetch note.');
-        console.error(err);
       } finally {
         setLoading(false);
       }
@@ -53,116 +83,27 @@ export default function LessonPage() {
     fetchNote();
   }, [lessonId]);
 
-  const htmlToJson = (html) => {
-    const doc = parseDocument(html);
-    const nodeToJson = (node) => {
-      if (node.type === "text") return { type: "text", value: node.data };
-      return {
-        type: node.name,
-        children: node.children ? node.children.map(nodeToJson) : [],
-        attrs: node.attribs || {},
-      };
-    };
-    return doc.children.map(nodeToJson);
-  };
-
-  const imageHandler = () => {
-    const input = document.createElement('input');
-    input.setAttribute('type', 'file');
-    input.setAttribute('accept', 'image/*');
-    input.click();
-
-    input.onchange = async () => {
-      const file = input.files[0];
-      if (file) {
-        try {
-          setLoading(true);
-          const res = await uploadService.uploadImage(file);
-          const quill = editorRef.current.getQuill();
-          const range = quill.getSelection(true);
-          quill.insertEmbed(range.index, 'image', res.imageUrl);
-        } catch (error) {
-          setError('Image upload failed.');
-        } finally {
-          setLoading(false);
-        }
-      }
-    };
-  };
-
-  useEffect(() => {
-    // This is a stable way to attach the handler after the editor is ready
-    if (editorRef.current) {
-      const quill = editorRef.current.getQuill();
-      if (quill) {
-        quill.getModule('toolbar').addHandler('image', imageHandler);
-      }
-    }
-  }, [editorRef.current]);
-
-  const editorHeader = (
-    <span className="ql-formats">
-      <select className="ql-font" defaultValue="sans-serif">
-        <option value="sans-serif">Sans Serif</option>
-        <option value="serif">Serif</option>
-        <option value="monospace">Monospace</option>
-      </select>
-      <select className="ql-header" defaultValue="0">
-        <option value="1">Heading 1</option>
-        <option value="2">Heading 2</option>
-        <option value="0">Normal</option>
-      </select>
-      {/* ADD THESE TWO LINES FOR COLOR */}
-      <select className="ql-color"></select>
-      <select className="ql-background"></select>
-      {/* ----------------------------- */}
-      <button className="ql-bold" aria-label="Bold"></button>
-      <button className="ql-italic" aria-label="Italic"></button>
-      <button className="ql-underline" aria-label="Underline"></button>
-      <button className="ql-list" value="ordered" aria-label="Ordered List"></button>
-      <button className="ql-list" value="bullet" aria-label="Bullet List"></button>
-      <button className="ql-link" aria-label="Link"></button>
-      <button className="ql-image" aria-label="Image"></button>
-      <button className="ql-clean" aria-label="Remove Formatting"></button>
-    </span>
-  );
-
-  const handleSave = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const contentJson = htmlToJson(noteContent);
-      if (noteId) {
-        await noteService.updateNote(noteId, { content: contentJson });
-      } else {
-        const newNote = await noteService.createNote({ lessonId, content: contentJson, workspaceId });
-        setNoteId(newNote._id);
-        setWorkspaceId(newNote.workspace);
-      }
-      toast.success('Note saved successfully!');
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to save note.');
-      // setError(err.response?.data?.message || 'Failed to save note.');
-      console.log(err)
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  const canEdit = userRole === 'admin' || userRole === 'editor';
+  const isReadOnly = !canEdit;
+  // 2. Handle AI Generation
   const handleGenerateQuestions = async () => {
-    if (!noteId || !workspaceId) {
-      toast.error('Note is not fully loaded or saved. Please wait or save the note first.');
+    if (!noteId || !workspaceId || !editorInstance) {
+      toast.error('Editor not ready or note not loaded.');
       return;
     }
     setGenerating(true);
     setError('');
     try {
-      // NEW: Pass the workspaceId to the API call
+      // Force immediate save to DB before generating
+      const contentBlocks = editorInstance.document;
+      await noteService.updateNote(noteId, { content: contentBlocks });
+
       const newQuestions = await questionService.generateQuestions(workspaceId, {
         noteIds: [noteId],
         source: source,
         count: numQuestions,
       });
+
       setIsModalOpen(false);
       navigate(`/quiz/play?workspaceId=${workspaceId}`, { state: { questions: newQuestions } });
     } catch (err) {
@@ -173,7 +114,49 @@ export default function LessonPage() {
     }
   };
 
-  if (loading && !noteContent && !error)
+  // 3. Auto-Save Logic (Debounced)
+  const onContentChange = (editor) => {
+    if (!noteId) return;
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        const contentBlocks = editor.document;
+        await noteService.updateNote(noteId, { content: contentBlocks });
+      } catch (err) {
+        // --- SECURITY CHECK ---
+        // If backend says 403, it means our role was changed in the background!
+        if (err.response && err.response.status === 403) {
+          toast.error("Your permissions have been revoked. Switching to Read-Only.");
+          setUserRole('viewer'); // This triggers readOnly=true in the editor
+        }
+      }
+    }, 2000);
+  };
+
+
+  useEffect(() => {
+    const handleRoleUpdate = (e) => {
+      const { workspaceId: updatedWorkspaceId, newRole } = e.detail;
+
+      // If the update is for the workspace we are currently in
+      if (updatedWorkspaceId === workspaceId) {
+        toast.info(`Your role has been updated to: ${newRole}`);
+        setUserRole(newRole);
+
+        // Force reload if demoted to viewer to kill write connections
+        // if (newRole === 'viewer') {
+        //   window.location.reload();
+        // }
+      }
+    };
+
+    window.addEventListener('role-updated', handleRoleUpdate);
+    return () => window.removeEventListener('role-updated', handleRoleUpdate);
+  }, [workspaceId]);
+
+
+  if (loading && !noteId && !initialContent)
     return (
       <div className='flex flex-col h-screen justify-center items-center text-white bg-gray-900'> {/* Assuming bg-gray-900 for full screen */}
         <div className="relative flex items-center justify-center mb-4">
@@ -189,54 +172,45 @@ export default function LessonPage() {
     );
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-4 sm:p-6 md:p-8">
-      <div className="max-w-8xl mx-auto">
+    <div className="min-h-screen bg-gray-900 text-white p-2 sm:p-6 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* HEADER */}
         <div className="flex flex-col gap-4 mb-4 sm:flex-row sm:justify-between sm:items-center">
-
-          {/* 1. Title: Always on top left, full width on mobile */}
+          {/* Show Read Only badge if viewer */}
           <h1 className="text-4xl text-white font-extrabold sm:text-3xl sm:font-bold">
-            Lesson Notes
+            Lesson Notes {!canEdit && <span className="text-sm font-normal text-gray-400 ml-2">(Read Only)</span>}
           </h1>
 
-          {/* 2. Buttons: Stacked vertically on mobile, side-by-side on desktop */}
-          <div className="flex flex-col gap-3 w-full sm:w-auto sm:flex-row sm:space-x-4 sm:gap-0">
-
-            {/* Primary Action: Generate AI Questions (Outline Style, full width on mobile) */}
-            <button
-              onClick={() => setIsModalOpen(true)}
-              // Style: Outline button, full width on mobile, reduced padding and text size for a smaller look
-              className="px-4 py-2 text-green-400 bg-transparent border-2 border-green-600 rounded-xl
-               hover:bg-green-600 hover:text-white font-bold text-base // <-- Text size reduced to base
-               transition duration-200 w-full text-center sm:w-auto sm:text-base sm:py-2" // <-- py reduced to 2
-            >
-              Generate AI Questions and Start Quiz
-            </button>
-            {/* Secondary Action: Save Note (Subtle, solid blue, full width on mobile) */}
-            <button
-              onClick={handleSave}
-              // Style: Solid blue (clear action), full width, slightly less aggressive than green outline
-              className="px-4 py-3 bg-blue-600 text-white font-bold rounded-xl 
-                       hover:bg-blue-700 disabled:bg-gray-500 
-                       transition duration-200 w-full text-center sm:w-auto sm:text-base sm:py-2"
-              disabled={loading || generating}
-            >
-              {loading ? 'Saving...' : 'Save Note'}
-            </button>
-
-          </div>
+          {/* Hide buttons for Viewers */}
+          {canEdit && (
+            <div className="flex flex-col gap-3 w-full sm:w-auto sm:flex-row sm:space-x-4 sm:gap-0">
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="px-4 py-2 text-green-400 bg-transparent border-2 border-green-600 rounded-xl hover:bg-green-600 hover:text-white font-bold text-base transition duration-200 w-full text-center sm:w-auto sm:text-base sm:py-2"
+              >
+                Generate AI Questions and Start Quiz
+              </button>
+            </div>
+          )}
         </div>
-        {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
-        <div className="bg-gray-800 w-full rounded-lg p-1">
-          <Editor
-            ref={editorRef}
-            value={noteContent}
-            onTextChange={(e) => setNoteContent(e.htmlValue)}
-            style={{ height: '70vh' }}
-            className="text-white"
-            headerTemplate={editorHeader}
+
+        {/* EDITOR */}
+        <CollaborationWrapper roomId={lessonId}>
+          <RealTimeEditor
+            initialContent={initialContent}
+            onEditorReady={(editor) => setEditorInstance(editor)}
+            currentUser={user} // Make sure this 'user' object has { username: "..." }
+
+            // PASS THE READ-ONLY PROP HERE
+            readOnly={isReadOnly}
+
+            // PASS onChange ONLY IF EDITING IS ALLOWED
+            // (This prevents even accidental local updates if the UI glitches)
+            onChange={canEdit ? onContentChange : undefined}
           />
-        </div>
+        </CollaborationWrapper>
       </div>
+      {/* --- MODAL --- */}
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)}>
         <h2 className="text-xl font-semibold mb-4">Generation Options</h2>
         <div className="space-y-4">
@@ -248,7 +222,7 @@ export default function LessonPage() {
               id="source"
               value={source}
               onChange={(e) => setSource(e.target.value)}
-              className="w-full p-2 border bg-gray-700 border-gray-600 rounded-md shadow-sm"
+              className="w-full p-2 border bg-gray-700 border-gray-600 rounded-md shadow-sm text-white"
             >
               <option value="from_notes">From My Notes</option>
               <option value="topic_related">Topic-Related (Harder)</option>
@@ -263,7 +237,7 @@ export default function LessonPage() {
               id="numQuestions"
               value={numQuestions}
               onChange={(e) => setNumQuestions(Number(e.target.value))}
-              className="w-full p-2 border bg-gray-700 border-gray-600 rounded-md shadow-sm"
+              className="w-full p-2 border bg-gray-700 border-gray-600 rounded-md shadow-sm text-white"
               min="1"
               max="20"
             />
@@ -277,7 +251,6 @@ export default function LessonPage() {
           >
             {generating ? 'Generating...' : 'Generate & Start Quiz'}
           </button>
-          {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
         </div>
       </Modal>
     </div>
